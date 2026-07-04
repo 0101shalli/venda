@@ -1,0 +1,14 @@
+fastapi==0.118.0
+uvicorn[standard]==0.23.0
+sqlmodel==0.0.8
+pysqlite3>=0.6.0  # SQLite3 fallback for systems without built-in sqlite3
+passlib==1.7.4
+bcrypt==3.2.0
+python-jose==3.3.0
+python-multipart==0.0.5
+pywebview==4.4.0
+python-barcode==0.14.0
+pandas==2.2.2
+openpyxl==3.1.2
+python-escpos==3.0.0
+Pillow>=9.0.0

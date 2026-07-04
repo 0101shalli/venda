@@ -1,0 +1,16 @@
+# Python Virtual Environments
+venda/backend/.venv/
+# JavaScript dependencies
+venda/frontend/node_modules/
+venda/build/
+*node_modules/
+*dist/
+# Environment variable files (Secret keys, API tokens)
+.env
+.env.local
+.env.development.local
+
+# IDE configurations and OS files
+.vscode/
+.idea/
+.DS_Store

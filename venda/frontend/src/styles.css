@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #0F172A;
+  --color-bg: #F8FAFC;
+  --color-sidebar: #FFFFFF;
+  --color-card: #FFFFFF;
+  --color-text: #0F172A;
+  --color-text-muted: #64748B;
+  --color-border: #E2E8F0;
+}
+
+html.dark {
+  --color-primary: #38BDF8;
+  --color-bg: #0B0F19;
+  --color-sidebar: #1E293B;
+  --color-card: #111827;
+  --color-text: #F1F5F9;
+  --color-text-muted: #CBD5E1;
+  --color-border: #334155;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+#root {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Apply dark mode to common elements */
+.dark {
+  color-scheme: dark;
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: var(--color-card);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+.dark button {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dark .bg-white {
+  background-color: var(--color-card);
+}
+
+.dark .text-slate-900 {
+  color: var(--color-text);
+}
+
+.dark .text-slate-600 {
+  color: var(--color-text-muted);
+}
+
+.dark .border-slate-200 {
+  border-color: var(--color-border);
+}
+
+.dark .hover\:bg-slate-50:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark .bg-slate-50 {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark .bg-slate-100 {
+  background-color: rgba(255, 255, 255, 0.1);
+}
