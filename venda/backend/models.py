@@ -10,6 +10,16 @@ class User(SQLModel, table=True):
     password_hash: str
     role: str = Field(default="cashier", regex="^(admin|manager|cashier)$")
     is_first_login: bool = Field(default=True)
+    
+    # Profile information fields
+    full_name: Optional[str] = Field(default=None)
+    email: Optional[str] = Field(default=None)
+    bio: Optional[str] = Field(default=None)
+    profile_image: Optional[str] = Field(default=None) # base64 format
+    social_twitter: Optional[str] = Field(default=None)
+    social_facebook: Optional[str] = Field(default=None)
+    social_linkedin: Optional[str] = Field(default=None)
+    social_instagram: Optional[str] = Field(default=None)
 
     inventory_transactions: List["InventoryTransaction"] = Relationship(back_populates="user")
     sales: List["Sale"] = Relationship(back_populates="cashier")

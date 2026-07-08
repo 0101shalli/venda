@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import JsBarcode from "jsbarcode";
 
 export type Product = {
   id?: number;
@@ -50,6 +51,25 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const barcodePreviewRef = useRef<SVGSVGElement | null>(null);
+
+  useEffect(() => {
+    if (isOpen && formData.barcode && barcodePreviewRef.current) {
+      try {
+        JsBarcode(barcodePreviewRef.current, formData.barcode, {
+          format: "CODE128",
+          width: 1.8,
+          height: 40,
+          displayValue: true,
+          fontSize: 12,
+          background: "#FFFFFF",
+          lineColor: "#000000"
+        });
+      } catch (err) {
+        console.error("JsBarcode edit preview error:", err);
+      }
+    }
+  }, [isOpen, formData.barcode]);
 
   useEffect(() => {
     if (isEditMode && product) {
@@ -144,6 +164,9 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                   placeholder="Auto-generated barcode"
                 />
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">System-generated barcode for the new product.</p>
+                <div className="mt-3 p-3 bg-white rounded-xl border border-slate-200 dark:border-slate-800 flex justify-center items-center w-64 shadow-sm">
+                  <svg ref={barcodePreviewRef} />
+                </div>
               </div>
 
               <div>

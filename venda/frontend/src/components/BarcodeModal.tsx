@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+import JsBarcode from "jsbarcode";
 import { Product } from "./ProductModal";
 
 type BarcodeModalProps = {
@@ -7,11 +9,45 @@ type BarcodeModalProps = {
 };
 
 export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalProps) {
+  const barcodeRef = useRef<SVGSVGElement | null>(null);
+
+  useEffect(() => {
+    if (isOpen && product && barcodeRef.current) {
+      try {
+        JsBarcode(barcodeRef.current, product.barcode, {
+          format: "CODE128",
+          width: 2,
+          height: 60,
+          displayValue: false, // We render the readable code text separately
+          background: "transparent",
+          lineColor: "#000000" // Always black on white background card
+        });
+      } catch (err) {
+        console.error("JsBarcode preview error:", err);
+      }
+    }
+  }, [isOpen, product]);
+
   if (!isOpen || !product) return null;
 
   const handlePrint = () => {
-    const printWindow = window.open("", "", "height=400,width=600");
+    const printWindow = window.open("", "", "height=450,width=600");
     if (!printWindow) return;
+
+    // Generate crisp vector barcode SVG for printing
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    try {
+      JsBarcode(svgEl, product.barcode, {
+        format: "CODE128",
+        width: 2.5,
+        height: 80,
+        displayValue: true,
+        fontSize: 16
+      });
+    } catch (err) {
+      console.error("JsBarcode print error:", err);
+    }
+    const barcodeSVGString = svgEl.outerHTML;
 
     const barcodeHTML = `
       <!DOCTYPE html>
@@ -19,34 +55,36 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
       <head>
         <title>Print Barcode - ${product.name}</title>
         <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
+          body { font-family: Arial, sans-serif; margin: 20px; display: flex; justify-content: center; }
           .barcode-container { 
             border: 2px solid #000; 
             padding: 20px; 
-            max-width: 4in;
+            width: 4in;
             text-align: center;
+            border-radius: 10px;
           }
           .barcode-image { 
-            font-size: 48px; 
-            letter-spacing: 8px; 
-            font-weight: bold; 
-            margin: 10px 0;
+            margin: 15px 0;
+            display: flex;
+            justify-content: center;
           }
-          .product-info { font-size: 14px; margin: 10px 0; }
-          .product-name { font-weight: bold; margin-top: 10px; }
-          .product-price { font-size: 16px; font-weight: bold; color: #2563eb; }
+          .product-info { font-size: 14px; text-transform: uppercase; color: #666; }
+          .product-name { font-weight: bold; font-size: 18px; margin-top: 10px; }
+          .product-price { font-size: 20px; font-weight: bold; color: #000; margin-top: 10px; }
         </style>
       </head>
       <body>
         <div class="barcode-container">
           <div class="product-info">${product.category}</div>
           <div class="product-name">${product.name}</div>
-          <div class="barcode-image">|${product.barcode}|</div>
+          <div class="barcode-image">${barcodeSVGString}</div>
           <div class="product-price">$${product.selling_price.toFixed(2)}</div>
         </div>
         <script>
-          window.print();
-          window.onafterprint = () => window.close();
+          window.onload = function() {
+            window.print();
+            window.onafterprint = () => window.close();
+          }
         </script>
       </body>
       </html>
@@ -57,27 +95,29 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
   };
 
   const handleDownload = () => {
-    const data = `
-BARCODE LABEL
-==============
-Category: ${product.category}
-Product Name: ${product.name}
-Barcode: ${product.barcode}
-Price: $${product.selling_price.toFixed(2)}
-Cost: $${product.cost_price.toFixed(2)}
-Stock: ${product.current_stock}
-Min Level: ${product.min_stock_level}
-Supplier: ${product.supplier || "N/A"}
-Warehouse: ${product.warehouse_location || "N/A"}
-    `.trim();
-
-    const element = document.createElement("a");
-    element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(data));
-    element.setAttribute("download", `${product.barcode}-${product.name}.txt`);
-    element.style.display = "none";
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+    const canvas = document.createElement("canvas");
+    try {
+      JsBarcode(canvas, product.barcode, {
+        format: "CODE128",
+        width: 3,
+        height: 100,
+        displayValue: true,
+        fontSize: 16,
+        background: "#FFFFFF",
+        lineColor: "#000000"
+      });
+      
+      const url = canvas.toDataURL("image/png");
+      const element = document.createElement("a");
+      element.setAttribute("href", url);
+      element.setAttribute("download", `barcode-${product.barcode}-${product.name}.png`);
+      element.style.display = "none";
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+    } catch (err) {
+      console.error("JsBarcode download error:", err);
+    }
   };
 
   return (
@@ -99,21 +139,21 @@ Warehouse: ${product.warehouse_location || "N/A"}
           </button>
         </div>
 
-        {/* Barcode Preview */}
-        <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 p-8 mb-6 text-center">
-          <div className="text-slate-500 dark:text-slate-400 text-xs font-medium uppercase tracking-wide mb-3">
+        {/* Barcode Preview (Always white card style for hardware compatibility scanner contrast) */}
+        <div className="bg-white rounded-xl border border-slate-200 dark:border-slate-800 p-8 mb-6 text-center shadow-inner">
+          <div className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">
             {product.category}
           </div>
-          <div className="text-lg font-bold text-slate-900 dark:text-white mb-4">
+          <div className="text-lg font-bold text-slate-900 mb-4">
             {product.name}
           </div>
-          <div className="text-4xl font-mono font-bold text-slate-900 dark:text-white tracking-wider my-4">
-            |{product.barcode}|
+          <div className="flex justify-center my-4 p-2 bg-white">
+            <svg ref={barcodeRef} className="mx-auto" />
           </div>
-          <div className="text-sm text-slate-600 dark:text-slate-400 mb-2">
+          <div className="text-sm font-mono text-slate-600 mb-2">
             {product.barcode}
           </div>
-          <div className="text-xl font-bold text-indigo-600 dark:text-sky-400">
+          <div className="text-2xl font-black text-sky-600">
             ${product.selling_price.toFixed(2)}
           </div>
         </div>
@@ -156,7 +196,7 @@ Warehouse: ${product.warehouse_location || "N/A"}
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            Download
+            Download Label
           </button>
         </div>
       </div>

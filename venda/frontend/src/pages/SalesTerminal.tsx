@@ -166,6 +166,8 @@ function CartRow({
 
 export default function SalesTerminal() {
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const addToCart = useCallback((product: ProductInfo) => {
     setCart((prev) => {
@@ -189,7 +191,44 @@ export default function SalesTerminal() {
 
   const removeItem = (id: number) => setCart((prev) => prev.filter((i) => i.id !== id));
 
-  const clearCart = () => setCart([]);
+  const clearCart = () => {
+    setCart([]);
+    setCheckoutStatus("idle");
+    setErrorMessage(null);
+  };
+
+  const handleCheckout = async (paymentMethod: "Cash" | "Card") => {
+    if (cart.length === 0) return;
+    setCheckoutStatus("loading");
+    setErrorMessage(null);
+    try {
+      const response = await fetch("/api/sales", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          payment_method: paymentMethod,
+          items: cart.map((item) => ({
+            product_id: item.id,
+            quantity: item.quantity,
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Checkout failed");
+      }
+
+      setCheckoutStatus("success");
+      setCart([]);
+      setTimeout(() => setCheckoutStatus("idle"), 3000);
+    } catch (err: any) {
+      setCheckoutStatus("error");
+      setErrorMessage(err.message || "An unknown error occurred during checkout");
+    }
+  };
 
   const total = cart.reduce((sum, i) => sum + i.selling_price * i.quantity, 0);
   const itemCount = cart.reduce((sum, i) => sum + i.quantity, 0);
@@ -247,6 +286,16 @@ export default function SalesTerminal() {
 
           {/* Cart items */}
           <div className="flex-1 overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+            {checkoutStatus === "success" && (
+              <div className="mb-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 p-4 text-sm font-medium text-emerald-600 dark:text-emerald-400 text-center border border-emerald-200 dark:border-emerald-950">
+                🎉 Checkout completed successfully!
+              </div>
+            )}
+            {checkoutStatus === "error" && errorMessage && (
+              <div className="mb-3 rounded-2xl bg-rose-50 dark:bg-rose-950/20 p-4 text-sm font-medium text-rose-600 dark:text-rose-400 text-center border border-rose-200 dark:border-rose-950">
+                ❌ {errorMessage}
+              </div>
+            )}
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <div className="mb-3 text-5xl">🛒</div>
@@ -289,16 +338,20 @@ export default function SalesTerminal() {
                 <button
                   id="checkout-cash"
                   type="button"
-                  className="rounded-2xl border-2 border-indigo-200 dark:border-sky-900 bg-indigo-50 dark:bg-sky-900/20 py-3 text-sm font-bold text-indigo-700 dark:text-sky-400 hover:bg-indigo-100 dark:hover:bg-sky-900/30 active:scale-95 transition-all"
+                  disabled={checkoutStatus === "loading"}
+                  onClick={() => handleCheckout("Cash")}
+                  className="rounded-2xl border-2 border-indigo-200 dark:border-sky-900 bg-indigo-50 dark:bg-sky-900/20 py-3 text-sm font-bold text-indigo-700 dark:text-sky-400 hover:bg-indigo-100 dark:hover:bg-sky-900/30 active:scale-95 transition-all disabled:opacity-50"
                 >
-                  💵 Cash
+                  {checkoutStatus === "loading" ? "..." : "💵 Cash"}
                 </button>
                 <button
                   id="checkout-card"
                   type="button"
-                  className="rounded-2xl bg-indigo-600 dark:bg-sky-500 py-3 text-sm font-bold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-all"
+                  disabled={checkoutStatus === "loading"}
+                  onClick={() => handleCheckout("Card")}
+                  className="rounded-2xl bg-indigo-600 dark:bg-sky-500 py-3 text-sm font-bold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-all disabled:opacity-50"
                 >
-                  💳 Card
+                  {checkoutStatus === "loading" ? "..." : "💳 Card"}
                 </button>
               </div>
             </div>

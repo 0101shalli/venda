@@ -8,13 +8,14 @@ import InventoryPage from "./pages/InventoryPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import UserManagementPage from "./pages/UserManagementPage";
 import SettingsPage from "./pages/SettingsPage";
+import OrdersPage from "./pages/OrdersPage";
 import ChangePasswordModal from "./components/ChangePasswordModal";
 import { fetchWithAuthInterceptors, getAuth, setAuth, clearAuth, AuthData } from "./services/auth";
 
 const routePermissions = {
-  cashier: ["/sales"],
-  manager: ["/sales", "/inventory", "/analytics"],
-  admin: ["/sales", "/inventory", "/analytics", "/users", "/settings"],
+  cashier: ["/sales", "/orders", "/settings"],
+  manager: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings"],
+  admin: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings"],
 };
 
 function App() {
@@ -79,6 +80,7 @@ function App() {
         {forcePasswordChange && <ChangePasswordModal onComplete={() => setForcePasswordChange(false)} />}
         <Routes>
           <Route path="/sales" element={allowedRoutes.includes("/sales") ? <SalesTerminal /> : <Navigate to="/sales" />} />
+          <Route path="/orders" element={allowedRoutes.includes("/orders") ? <OrdersPage /> : <Navigate to="/sales" />} />
           <Route path="/inventory" element={allowedRoutes.includes("/inventory") ? <InventoryPage /> : <Navigate to="/sales" />} />
           <Route path="/analytics" element={allowedRoutes.includes("/analytics") ? <AnalyticsPage /> : <Navigate to="/sales" />} />
           <Route path="/users" element={allowedRoutes.includes("/users") ? <UserManagementPage /> : <Navigate to="/sales" />} />

@@ -7,10 +7,11 @@ type SidebarProps = {
 
 const menuItems = [
   { path: "/sales", label: "Sales Terminal", roles: ["cashier", "manager", "admin"] },
+  { path: "/orders", label: "Orders", roles: ["cashier", "manager", "admin"] },
   { path: "/inventory", label: "Inventory", roles: ["manager", "admin"] },
   { path: "/analytics", label: "Analytics", roles: ["manager", "admin"] },
-  { path: "/users", label: "User Management", roles: ["admin"] },
-  { path: "/settings", label: "Settings", roles: ["admin"] },
+  { path: "/users", label: "User Management", roles: ["manager", "admin"] },
+  { path: "/settings", label: "Settings", roles: ["cashier", "manager", "admin"] },
 ];
 
 export default function Sidebar({ role, onLogout }: SidebarProps) {

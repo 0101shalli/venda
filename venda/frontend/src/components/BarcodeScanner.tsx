@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { BrowserMultiFormatReader } from "@zxing/library";
 
 export type ProductInfo = {
   id: number;
@@ -7,6 +8,7 @@ export type ProductInfo = {
   cost_price: number;
   selling_price: number;
   min_stock_level: number;
+  category: string;
 };
 
 type BarcodeScannerProps = {
@@ -16,13 +18,7 @@ type BarcodeScannerProps = {
 export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
-  // Scanner burst detection
-  const lastKeyTimeRef = useRef<number>(0);
-  const keystrokeCountRef = useRef<number>(0);
-  const BURST_THRESHOLD_MS = 50; // hardware scanners fire keys < 50ms apart
-  const MIN_BURST_KEYS = 4;      // treat as scanner if ≥4 fast keystrokes before Enter
+  const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null);
 
   const [barcode, setBarcode] = useState("");
   const [scannedProduct, setScannedProduct] = useState<ProductInfo | null>(null);
@@ -32,23 +28,30 @@ export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  // Keep the input focused at all times so hardware scanners always land here
+  // Focus redirection: redirect keystrokes to scanner input if not focused in another text input
   useEffect(() => {
-    const refocus = () => {
-      // Don't steal focus from other inputs (e.g. quantity edit, search bar)
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const active = document.activeElement;
+      
+      // If typing in another input (e.g. searching, edit forms), don't steal focus
       if (
         active &&
         active !== inputRef.current &&
-        (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "BUTTON")
-      ) return;
-      inputRef.current?.focus();
+        (active.tagName === "INPUT" || active.tagName === "TEXTAREA")
+      ) {
+        return;
+      }
+
+      // If a single character is pressed, make sure scanner input is focused
+      if (inputRef.current && active !== inputRef.current) {
+        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          inputRef.current.focus();
+        }
+      }
     };
-    // Focus on mount
-    inputRef.current?.focus();
-    // Re-focus whenever the page is clicked on a non-interactive area
-    document.addEventListener("click", refocus);
-    return () => document.removeEventListener("click", refocus);
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, []);
 
   const lookupBarcode = useCallback(
@@ -68,7 +71,7 @@ export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps
         const product: ProductInfo = await res.json();
         setScannedProduct(product);
         setScanError(null);
-        onProductScanned(product);          // ← auto-add to cart
+        onProductScanned(product);          // Auto-add to cart
         setAddedFlash(true);
         setTimeout(() => setAddedFlash(false), 2000);
       } catch {
@@ -77,6 +80,8 @@ export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps
       } finally {
         setIsLookingUp(false);
         setBarcode("");
+        // Clear input field DOM value directly
+        if (inputRef.current) inputRef.current.value = "";
         // Re-focus so next scan lands immediately
         setTimeout(() => inputRef.current?.focus(), 0);
       }
@@ -84,81 +89,69 @@ export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps
     [onProductScanned]
   );
 
-  // Detect scanner burst vs. manual typing in the input
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const now = Date.now();
-    const gap = now - lastKeyTimeRef.current;
-    lastKeyTimeRef.current = now;
-
     if (e.key === "Enter") {
       e.preventDefault();
-      const isScannerBurst = keystrokeCountRef.current >= MIN_BURST_KEYS;
-      const hasValue = barcode.trim().length >= 4;
-      if (hasValue || isScannerBurst) {
-        lookupBarcode(barcode);
+      // Read directly from DOM to bypass React state synchronization lag during rapid scanning
+      const val = e.currentTarget.value.trim();
+      if (val.length >= 1) {
+        lookupBarcode(val);
       }
-      keystrokeCountRef.current = 0;
-      return;
-    }
-
-    if (gap < BURST_THRESHOLD_MS) {
-      keystrokeCountRef.current += 1;
-    } else {
-      // Slow typing — reset burst counter
-      keystrokeCountRef.current = 0;
     }
   };
 
-  // Manual form submit (button click or Enter when NOT scanner)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (barcode.trim().length >= 1) {
-      lookupBarcode(barcode);
+    const val = inputRef.current?.value.trim() || "";
+    if (val.length >= 1) {
+      lookupBarcode(val);
     }
   };
 
-  // Camera
+  // Camera integration using @zxing/library for robust real-time decodings
   const startCamera = async () => {
     setCameraError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        // Wait for video metadata to be loaded before playing
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().catch((err) => {
-            console.error("Failed to play video:", err);
-            setCameraError("Failed to start video playback. Please reload and try again.");
-          });
-        };
+      const reader = new BrowserMultiFormatReader();
+      codeReaderRef.current = reader;
+      
+      const videoInputDevices = await reader.listVideoInputDevices();
+      if (videoInputDevices.length === 0) {
+        setCameraError("No camera device found on this device.");
+        return;
       }
+      
       setCameraActive(true);
-    } catch (err: unknown) {
-      if (err instanceof DOMException) {
-        if (err.name === "NotAllowedError") {
-          setCameraError("Camera access was denied. Please enable camera permissions in your browser settings.");
-        } else if (err.name === "NotFoundError") {
-          setCameraError("No camera device found on this device.");
-        } else {
-          setCameraError(`Camera error: ${err.message}`);
+      
+      // Decode from default/first video input device
+      await reader.decodeFromVideoDevice(
+        undefined,
+        videoRef.current,
+        (result, err) => {
+          if (result) {
+            const scannedText = result.getText();
+            lookupBarcode(scannedText);
+            // Temporarily stop camera decodes to prevent multiple triggerings
+            reader.reset();
+            setTimeout(() => {
+              if (codeReaderRef.current && cameraActive) {
+                startCamera();
+              }
+            }, 1500);
+          }
         }
-      } else {
-        setCameraError("Camera access denied or unavailable on this device.");
-      }
+      );
+    } catch (err: any) {
+      setCameraError(`Camera error: ${err.message || err}`);
+      setCameraActive(false);
     }
   };
 
   const stopCamera = () => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
+    if (codeReaderRef.current) {
+      codeReaderRef.current.reset();
+      codeReaderRef.current = null;
+    }
     setCameraActive(false);
   };
 
@@ -268,7 +261,7 @@ export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps
               <div className="flex items-center gap-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Last Scan</p>
                 {addedFlash && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 dark:bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white dark:text-white">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 dark:bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white">
                     ✓ Added to cart
                   </span>
                 )}

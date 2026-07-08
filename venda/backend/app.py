@@ -60,9 +60,102 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
+def check_and_update_schema() -> None:
+    """Safely check and add columns to SQLite database for existing setups."""
+    with engine.connect() as conn:
+        res = conn.execute(text("PRAGMA table_info(user)"))
+        columns = [row[1] for row in res]
+        
+        profile_cols = [
+            ("full_name", "TEXT"),
+            ("email", "TEXT"),
+            ("bio", "TEXT"),
+            ("profile_image", "TEXT"),
+            ("social_twitter", "TEXT"),
+            ("social_facebook", "TEXT"),
+            ("social_linkedin", "TEXT"),
+            ("social_instagram", "TEXT"),
+        ]
+        
+        for col_name, col_type in profile_cols:
+            if col_name not in columns:
+                try:
+                    conn.execute(text(f"ALTER TABLE user ADD COLUMN {col_name} {col_type}"))
+                except Exception as e:
+                    print(f"Error adding column {col_name} to user: {e}")
+
+
+def seed_mock_sales() -> None:
+    """Generate realistic sales and inventory transactions for the last 30 days if DB is empty."""
+    from datetime import datetime as dt, timedelta
+    import random
+    
+    with get_session() as session:
+        existing_sale = session.exec(select(Sale)).first()
+        if existing_sale:
+            return  # Has data already
+        
+        products = session.exec(select(Product)).all()
+        if not products:
+            return
+            
+        user = session.exec(select(User)).first()
+        user_id = user.id if user else 1
+        
+        now = dt.utcnow()
+        for day in range(30):
+            sale_date = now - timedelta(days=day)
+            num_sales = random.randint(3, 10)
+            for _ in range(num_sales):
+                hour = random.choice([8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21])
+                minute = random.randint(0, 59)
+                timestamp = sale_date.replace(hour=hour, minute=minute)
+                
+                num_items = random.randint(1, 5)
+                sale_products = random.sample(products, min(num_items, len(products)))
+                
+                total_amount = 0
+                sale_items = []
+                for p in sale_products:
+                    qty = random.randint(1, 3)
+                    unit_price = p.selling_price
+                    total_amount += unit_price * qty
+                    
+                    sale_items.append(SaleItem(
+                        product_id=p.id,
+                        quantity=qty,
+                        unit_price=unit_price
+                    ))
+                    
+                    session.add(InventoryTransaction(
+                        product_id=p.id,
+                        quantity_changed=-qty,
+                        type="sale",
+                        user_id=user_id,
+                        timestamp=timestamp
+                    ))
+                    
+                invoice_num = f"INV-{timestamp.strftime('%Y%m%d%H%M')}-{random.randint(100, 999)}"
+                sale = Sale(
+                    invoice_number=invoice_num,
+                    total_amount=total_amount,
+                    payment_method=random.choice(["Cash", "Card"]),
+                    cashier_id=user_id,
+                    timestamp=timestamp,
+                    sale_items=sale_items
+                )
+                session.add(sale)
+        session.commit()
+
+
 @app.on_event("startup")
 def startup_event() -> None:
     create_db_and_tables()
+    try:
+        check_and_update_schema()
+    except Exception as e:
+        print(f"Error checking/updating schema: {e}")
+        
     with get_session() as session:
         admin = session.exec(select(User).where(User.username == "admin")).first()
         if not admin:
@@ -74,6 +167,11 @@ def startup_event() -> None:
             )
             session.add(admin)
             session.commit()
+            
+    try:
+        seed_mock_sales()
+    except Exception as e:
+        print(f"Error seeding mock sales: {e}")
 
 
 @app.post("/api/login", response_model=LoginResponse)
@@ -448,6 +546,381 @@ def adjust_stock(product_id: int, adjustment: StockAdjustmentRequest):
             "current_stock": product.current_stock,
             "message": f"Stock adjusted by {adjustment.quantity_change}",
         }
+
+
+# --- Sales and Checkout Endpoints ---
+class SaleItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+    unit_price: float
+
+class SaleCreate(BaseModel):
+    payment_method: str
+    total_amount: float
+    cashier_username: str
+    items: list[SaleItemCreate]
+
+@app.post("/api/sales")
+def create_sale(sale_data: SaleCreate):
+    with get_session() as session:
+        cashier = session.exec(select(User).where(User.username == sale_data.cashier_username)).first()
+        cashier_id = cashier.id if cashier else 1
+        
+        from datetime import datetime as dt
+        import random
+        now = dt.utcnow()
+        invoice_num = f"INV-{now.strftime('%Y%m%d%H%M')}-{random.randint(100, 999)}"
+        
+        sale = Sale(
+            invoice_number=invoice_num,
+            total_amount=sale_data.total_amount,
+            payment_method=sale_data.payment_method,
+            cashier_id=cashier_id,
+            timestamp=now
+        )
+        session.add(sale)
+        session.commit()
+        session.refresh(sale)
+        
+        for item in sale_data.items:
+            product = session.get(Product, item.product_id)
+            if not product:
+                raise HTTPException(status_code=404, detail=f"Product with id {item.product_id} not found")
+            
+            product.current_stock -= item.quantity
+            product.updated_at = now
+            session.add(product)
+            
+            sale_item = SaleItem(
+                sale_id=sale.id,
+                product_id=product.id,
+                quantity=item.quantity,
+                unit_price=item.unit_price
+            )
+            session.add(sale_item)
+            
+            transaction = InventoryTransaction(
+                product_id=product.id,
+                quantity_changed=-item.quantity,
+                type="sale",
+                user_id=cashier_id,
+                timestamp=now
+            )
+            session.add(transaction)
+            
+        session.commit()
+        return {"invoice_number": invoice_num, "message": "Sale completed successfully"}
+
+
+@app.get("/api/sales")
+def get_sales():
+    with get_session() as session:
+        sales = session.exec(select(Sale).order_by(Sale.timestamp.desc())).all()
+        result = []
+        for sale in sales:
+            items = []
+            for item in sale.sale_items:
+                product = item.product
+                items.append({
+                    "sku": product.barcode if product else "N/A",
+                    "name": product.name if product else "Unknown Product",
+                    "category": product.category if product else "General",
+                    "unit_price": item.unit_price,
+                    "quantity": item.quantity,
+                    "total_price": item.unit_price * item.quantity
+                })
+            
+            cashier_name = "System"
+            if sale.cashier:
+                cashier_name = sale.cashier.username
+            elif sale.cashier_id:
+                cashier_user = session.get(User, sale.cashier_id)
+                if cashier_user:
+                    cashier_name = cashier_user.username
+
+            result.append({
+                "id": sale.id,
+                "invoice_number": sale.invoice_number,
+                "timestamp": sale.timestamp.isoformat(),
+                "cashier_id": sale.cashier_id,
+                "cashier_name": cashier_name,
+                "payment_method": sale.payment_method,
+                "total_amount": sale.total_amount,
+                "items": items
+            })
+        return result
+
+
+# --- Detailed Analytics Endpoint ---
+@app.get("/api/analytics/detailed")
+def detailed_analytics():
+    from datetime import datetime as dt, timedelta
+    
+    with get_session() as session:
+        now = dt.utcnow()
+        thirty_days_ago = now - timedelta(days=30)
+        seven_days_ago = now - timedelta(days=7)
+        
+        # 1. Sales Changes (Revenue over last 30 days)
+        sales = session.exec(
+            select(Sale).where(Sale.timestamp >= thirty_days_ago).order_by(Sale.timestamp.asc())
+        ).all()
+        
+        sales_by_day = {}
+        for day_offset in range(30):
+            d = (now - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+            sales_by_day[d] = 0.0
+            
+        for sale in sales:
+            d = sale.timestamp.strftime("%Y-%m-%d")
+            if d in sales_by_day:
+                sales_by_day[d] += sale.total_amount
+                
+        sales_changes = [{"date": k, "revenue": round(v, 2)} for k, v in sorted(sales_by_day.items())]
+        
+        # 2. Items Sold Against Time (Quantity sold over last 30 days)
+        sale_items = session.exec(
+            select(SaleItem, Sale)
+            .join(Sale)
+            .where(Sale.timestamp >= thirty_days_ago)
+        ).all()
+        
+        qty_by_day = {}
+        for day_offset in range(30):
+            d = (now - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+            qty_by_day[d] = 0
+            
+        for item, sale in sale_items:
+            d = sale.timestamp.strftime("%Y-%m-%d")
+            if d in qty_by_day:
+                qty_by_day[d] += item.quantity
+                
+        items_sold = [{"date": k, "quantity": v} for k, v in sorted(qty_by_day.items())]
+        
+        # 3. Daily Peak Hours (sales count and revenue grouped by hour 0-23)
+        peak_hours = {h: {"hour": h, "count": 0, "revenue": 0.0} for h in range(24)}
+        all_sales = session.exec(select(Sale)).all()
+        for sale in all_sales:
+            h = sale.timestamp.hour
+            peak_hours[h]["count"] += 1
+            peak_hours[h]["revenue"] += sale.total_amount
+            
+        for h in range(24):
+            peak_hours[h]["revenue"] = round(peak_hours[h]["revenue"], 2)
+        daily_peak_hours = [peak_hours[h] for h in range(24)]
+        
+        # 4. Seasonal Sales Data (grouped by month of year)
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        seasonal = {m: 0.0 for m in months}
+        for sale in all_sales:
+            m = months[sale.timestamp.month - 1]
+            seasonal[m] += sale.total_amount
+            
+        seasonal_sales = [{"month": m, "revenue": round(seasonal[m], 2)} for m in months]
+        
+        # 5. Daily Inventory in a Week (total stock level for last 7 days)
+        products = session.exec(select(Product)).all()
+        current_total_stock = sum(p.current_stock for p in products)
+        
+        txs = session.exec(
+            select(InventoryTransaction)
+            .where(InventoryTransaction.timestamp >= seven_days_ago)
+            .order_by(InventoryTransaction.timestamp.desc())
+        ).all()
+        
+        txs_by_day = {}
+        for day_offset in range(8):
+            d = (now - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+            txs_by_day[d] = 0
+            
+        for tx in txs:
+            d = tx.timestamp.strftime("%Y-%m-%d")
+            if d in txs_by_day:
+                txs_by_day[d] += tx.quantity_changed
+                
+        daily_inventory = []
+        running_stock = current_total_stock
+        
+        for day_offset in range(7):
+            d_today = (now - timedelta(days=day_offset)).strftime("%Y-%m-%d")
+            daily_inventory.append({"date": d_today, "stock": max(0, running_stock)})
+            change_today = txs_by_day.get(d_today, 0)
+            running_stock -= change_today
+            
+        daily_inventory.reverse()
+        
+        return {
+            "sales_changes": sales_changes,
+            "items_sold_against_time": items_sold,
+            "daily_peak_hours": daily_peak_hours,
+            "seasonal_sales": seasonal_sales,
+            "daily_inventory": daily_inventory
+        }
+
+
+# --- User Management Endpoints ---
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: str
+    full_name: str | None = None
+    email: str | None = None
+    bio: str | None = None
+    profile_image: str | None = None
+    social_twitter: str | None = None
+    social_facebook: str | None = None
+    social_linkedin: str | None = None
+    social_instagram: str | None = None
+
+class UserUpdate(BaseModel):
+    role: str | None = None
+    full_name: str | None = None
+    email: str | None = None
+    bio: str | None = None
+    profile_image: str | None = None
+    social_twitter: str | None = None
+    social_facebook: str | None = None
+    social_linkedin: str | None = None
+    social_instagram: str | None = None
+
+class PasswordReset(BaseModel):
+    password: str
+
+@app.get("/api/users")
+def list_users():
+    with get_session() as session:
+        users = session.exec(select(User)).all()
+        return [
+            {
+                "id": u.id,
+                "username": u.username,
+                "role": u.role,
+                "is_first_login": u.is_first_login,
+                "full_name": u.full_name,
+                "email": u.email,
+                "bio": u.bio,
+                "profile_image": u.profile_image,
+                "social_twitter": u.social_twitter,
+                "social_facebook": u.social_facebook,
+                "social_linkedin": u.social_linkedin,
+                "social_instagram": u.social_instagram
+            } for u in users
+        ]
+
+@app.post("/api/users")
+def create_user(user_data: UserCreate):
+    with get_session() as session:
+        existing = session.exec(select(User).where(User.username == user_data.username)).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Username already exists")
+            
+        new_user = User(
+            username=user_data.username,
+            password_hash=get_password_hash(user_data.password),
+            role=user_data.role,
+            is_first_login=True,
+            full_name=user_data.full_name,
+            email=user_data.email,
+            bio=user_data.bio,
+            profile_image=user_data.profile_image,
+            social_twitter=user_data.social_twitter,
+            social_facebook=user_data.social_facebook,
+            social_linkedin=user_data.social_linkedin,
+            social_instagram=user_data.social_instagram
+        )
+        session.add(new_user)
+        session.commit()
+        session.refresh(new_user)
+        return {"id": new_user.id, "username": new_user.username, "message": "User created successfully"}
+
+@app.put("/api/users/{user_id}")
+def update_user(user_id: int, user_data: UserUpdate):
+    with get_session() as session:
+        user = session.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        update_dict = user_data.dict(exclude_unset=True)
+        for k, v in update_dict.items():
+            setattr(user, k, v)
+            
+        session.add(user)
+        session.commit()
+        return {"message": "User updated successfully"}
+
+@app.post("/api/users/{user_id}/reset-password")
+def reset_user_password(user_id: int, pw_data: PasswordReset):
+    with get_session() as session:
+        user = session.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        user.password_hash = get_password_hash(pw_data.password)
+        user.is_first_login = True
+        session.add(user)
+        session.commit()
+        return {"message": "Password reset successfully"}
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int):
+    with get_session() as session:
+        user = session.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        if user.username == "admin":
+            raise HTTPException(status_code=400, detail="Cannot delete default admin user")
+            
+        session.delete(user)
+        session.commit()
+        return {"message": "User deleted successfully"}
+
+
+# --- User Profile Endpoints ---
+@app.get("/api/profile")
+def get_profile(username: str):
+    with get_session() as session:
+        user = session.exec(select(User).where(User.username == username)).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "full_name": user.full_name,
+            "email": user.email,
+            "bio": user.bio,
+            "profile_image": user.profile_image,
+            "social_twitter": user.social_twitter,
+            "social_facebook": user.social_facebook,
+            "social_linkedin": user.social_linkedin,
+            "social_instagram": user.social_instagram
+        }
+
+class ProfileUpdate(BaseModel):
+    full_name: str | None = None
+    email: str | None = None
+    bio: str | None = None
+    profile_image: str | None = None
+    social_twitter: str | None = None
+    social_facebook: str | None = None
+    social_linkedin: str | None = None
+    social_instagram: str | None = None
+
+@app.put("/api/profile")
+def update_profile(username: str, data: ProfileUpdate):
+    with get_session() as session:
+        user = session.exec(select(User).where(User.username == username)).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        update_dict = data.dict(exclude_unset=True)
+        for k, v in update_dict.items():
+            setattr(user, k, v)
+            
+        session.add(user)
+        session.commit()
+        return {"message": "Profile updated successfully"}
 
 
 # Mount static frontend AFTER all API routes so /api/* routes always take priority
