@@ -125,7 +125,7 @@ export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps
       
       // Decode from default/first video input device
       await reader.decodeFromVideoDevice(
-        undefined,
+        null,
         videoRef.current,
         (result, err) => {
           if (result) {

@@ -749,12 +749,27 @@ def detailed_analytics():
             
         daily_inventory.reverse()
         
+        # 6. Top Selling Products (grouped by product name)
+        items_and_products = session.exec(
+            select(SaleItem, Product)
+            .join(Product)
+            .join(Sale, SaleItem.sale_id == Sale.id)
+            .where(Sale.timestamp >= thirty_days_ago)
+        ).all()
+        
+        product_qty = {}
+        for item, product in items_and_products:
+            product_qty[product.name] = product_qty.get(product.name, 0) + item.quantity
+            
+        top_products = [{"name": k, "quantity": v} for k, v in sorted(product_qty.items(), key=lambda x: x[1], reverse=True)[:5]]
+        
         return {
             "sales_changes": sales_changes,
             "items_sold_against_time": items_sold,
             "daily_peak_hours": daily_peak_hours,
             "seasonal_sales": seasonal_sales,
-            "daily_inventory": daily_inventory
+            "daily_inventory": daily_inventory,
+            "top_products": top_products
         }
 
 

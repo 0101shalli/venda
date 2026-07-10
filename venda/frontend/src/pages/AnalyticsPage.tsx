@@ -52,7 +52,29 @@ export default function AnalyticsPage() {
         return res.json();
       })
       .then((payload) => {
-        setData(payload);
+        const mappedData: DetailedAnalytics = {
+          revenue_trends: (payload.sales_changes || []).map((item: any) => ({
+            date: item.date,
+            revenue: Number(item.revenue || 0),
+          })),
+          items_sold: (payload.top_products || []).map((item: any) => ({
+            name: item.name || "Unknown Product",
+            quantity: Number(item.quantity || 0),
+          })),
+          peak_hours: (payload.daily_peak_hours || []).map((item: any) => ({
+            hour: Number(item.hour || 0),
+            orders: Number(item.count || 0),
+          })),
+          seasonal_sales: (payload.seasonal_sales || []).map((item: any) => ({
+            month: item.month,
+            revenue: Number(item.revenue || 0),
+          })),
+          inventory_history: (payload.daily_inventory || []).map((item: any) => ({
+            date: item.date,
+            value: Number(item.stock || 0),
+          })),
+        };
+        setData(mappedData);
         setLoading(false);
       })
       .catch((err) => {
