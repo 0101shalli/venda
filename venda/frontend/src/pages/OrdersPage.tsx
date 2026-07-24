@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useCurrency } from "../context/CurrencyContext";
 
 interface OrderItem {
   sku: string;
@@ -21,6 +22,7 @@ interface Order {
 }
 
 export default function OrdersPage() {
+  const { formatPrice } = useCurrency();
   const [orders, setOrders] = useState<Order[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
@@ -121,7 +123,7 @@ export default function OrdersPage() {
                   <div className="flex items-center gap-6">
                     <div className="text-right">
                       <div className="text-xl font-bold text-slate-800 dark:text-slate-100">
-                        ${order.total_amount.toFixed(2)}
+                        {formatPrice(order.total_amount)}
                       </div>
                       <div className="text-xs text-slate-400 dark:text-slate-500">
                         {order.items.reduce((acc, it) => acc + it.quantity, 0)} item(s)
@@ -165,10 +167,10 @@ export default function OrdersPage() {
                               <td className="py-4 font-mono text-xs">{item.sku}</td>
                               <td className="py-4 font-medium">{item.name}</td>
                               <td className="py-4 text-slate-500 dark:text-slate-400">{item.category}</td>
-                              <td className="py-4 text-right">${item.unit_price.toFixed(2)}</td>
+                              <td className="py-4 text-right">{formatPrice(item.unit_price)}</td>
                               <td className="py-4 text-center">{item.quantity}</td>
                               <td className="py-4 text-right font-semibold text-slate-800 dark:text-slate-200">
-                                ${item.total_price.toFixed(2)}
+                                {formatPrice(item.total_price)}
                               </td>
                             </tr>
                           ))}

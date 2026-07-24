@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useCurrency } from "../context/CurrencyContext";
 
 interface RevenueTrend {
   date: string;
@@ -34,6 +35,7 @@ interface DetailedAnalytics {
 }
 
 export default function AnalyticsPage() {
+  const { formatPrice, currencySymbol } = useCurrency();
   const [data, setData] = useState<DetailedAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -142,7 +144,7 @@ export default function AnalyticsPage() {
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">30-Day Revenue</p>
-          <p className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-100">${totalRevenue.toFixed(2)}</p>
+          <p className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-100">{formatPrice(totalRevenue)}</p>
         </div>
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Items Sold</p>
@@ -156,7 +158,7 @@ export default function AnalyticsPage() {
         </div>
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Inventory Valuation</p>
-          <p className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-100">${currentValuation.toFixed(2)}</p>
+          <p className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-100">{formatPrice(currentValuation)}</p>
         </div>
       </div>
 
@@ -167,7 +169,7 @@ export default function AnalyticsPage() {
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800 relative">
           <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Revenue Trends (Last 30 Days)</h3>
           <div className="w-full aspect-[2.2/1]">
-            <RevenueTrendsChart trends={data.revenue_trends} onHover={showTooltip} onLeave={hideTooltip} />
+            <RevenueTrendsChart trends={data.revenue_trends} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
           </div>
         </div>
 
@@ -191,7 +193,7 @@ export default function AnalyticsPage() {
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
           <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Monthly Seasonal Sales</h3>
           <div className="w-full aspect-[2.2/1]">
-            <SeasonalSalesChart sales={data.seasonal_sales} onHover={showTooltip} onLeave={hideTooltip} />
+            <SeasonalSalesChart sales={data.seasonal_sales} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
           </div>
         </div>
 
@@ -199,7 +201,7 @@ export default function AnalyticsPage() {
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800 lg:col-span-2">
           <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">7-Day Inventory Valuation Trend</h3>
           <div className="w-full aspect-[3.5/1]">
-            <InventoryValuationChart history={data.inventory_history} onHover={showTooltip} onLeave={hideTooltip} />
+            <InventoryValuationChart history={data.inventory_history} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
           </div>
         </div>
 
@@ -214,10 +216,12 @@ function RevenueTrendsChart({
   trends,
   onHover,
   onLeave,
+  currencySymbol,
 }: {
   trends: RevenueTrend[];
   onHover: (e: React.MouseEvent, title: string, value: string) => void;
   onLeave: () => void;
+  currencySymbol: string;
 }) {
   const w = 600;
   const h = 250;
@@ -265,7 +269,7 @@ function RevenueTrendsChart({
           <g key={i}>
             <line x1={paddingLeft} y1={y} x2={w - paddingRight} y2={y} stroke="#334155" strokeDasharray="3 3" opacity="0.2" />
             <text x={paddingLeft - 10} y={y + 4} textAnchor="end" className="text-[10px] fill-slate-400 font-semibold">
-              ${val.toFixed(0)}
+              {currencySymbol}{val.toFixed(0)}
             </text>
           </g>
         );
@@ -288,7 +292,7 @@ function RevenueTrendsChart({
           r="4.5"
           className="fill-sky-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:r-6 hover:fill-sky-400 transition-all duration-150"
           strokeWidth="1.5"
-          onMouseEnter={(e) => onHover(e, new Date(p.data.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), `$${p.data.revenue.toFixed(2)}`)}
+          onMouseEnter={(e) => onHover(e, new Date(p.data.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), `${currencySymbol}${p.data.revenue.toFixed(2)}`)}
           onMouseLeave={onLeave}
         />
       ))}
@@ -468,10 +472,12 @@ function SeasonalSalesChart({
   sales,
   onHover,
   onLeave,
+  currencySymbol,
 }: {
   sales: SeasonalSale[];
   onHover: (e: React.MouseEvent, title: string, value: string) => void;
   onLeave: () => void;
+  currencySymbol: string;
 }) {
   const w = 600;
   const h = 250;
@@ -527,7 +533,7 @@ function SeasonalSalesChart({
           <g key={i}>
             <line x1={paddingLeft} y1={y} x2={w - paddingRight} y2={y} stroke="#334155" strokeDasharray="3 3" opacity="0.15" />
             <text x={paddingLeft - 10} y={y + 4} textAnchor="end" className="text-[10px] fill-slate-400 font-semibold">
-              ${val.toFixed(0)}
+              {currencySymbol}{val.toFixed(0)}
             </text>
           </g>
         );
@@ -549,7 +555,7 @@ function SeasonalSalesChart({
           r="4.5"
           className="fill-amber-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:r-6 hover:fill-amber-400 transition-all duration-150"
           strokeWidth="1.5"
-          onMouseEnter={(e) => onHover(e, p.data.month, `$${p.data.revenue.toFixed(2)}`)}
+          onMouseEnter={(e) => onHover(e, p.data.month, `${currencySymbol}${p.data.revenue.toFixed(2)}`)}
           onMouseLeave={onLeave}
         />
       ))}
@@ -571,10 +577,12 @@ function InventoryValuationChart({
   history,
   onHover,
   onLeave,
+  currencySymbol,
 }: {
   history: InventoryHistory[];
   onHover: (e: React.MouseEvent, title: string, value: string) => void;
   onLeave: () => void;
+  currencySymbol: string;
 }) {
   const w = 900;
   const h = 220;
@@ -621,7 +629,7 @@ function InventoryValuationChart({
           <g key={i}>
             <line x1={paddingLeft} y1={y} x2={w - paddingRight} y2={y} stroke="#334155" strokeDasharray="3 3" opacity="0.15" />
             <text x={paddingLeft - 12} y={y + 4} textAnchor="end" className="text-[10px] fill-slate-400 font-semibold">
-              ${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              {currencySymbol}{val.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </text>
           </g>
         );
@@ -643,7 +651,7 @@ function InventoryValuationChart({
           r="5"
           className="fill-emerald-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:r-6 hover:fill-emerald-400 transition-all duration-150"
           strokeWidth="1.5"
-          onMouseEnter={(e) => onHover(e, new Date(p.data.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), `Valuation: $${p.data.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`)}
+          onMouseEnter={(e) => onHover(e, new Date(p.data.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), `Valuation: ${currencySymbol}${p.data.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`)}
           onMouseLeave={onLeave}
         />
       ))}

@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import ProductModal, { Product } from "../components/ProductModal";
 import BarcodeModal from "../components/BarcodeModal";
 import MetaModal from "../components/MetaModal";
+import { useCurrency } from "../context/CurrencyContext";
 
 type InventoryStat = {
   total_products: number;
@@ -33,6 +34,7 @@ function fuzzySearch(query: string, text: string): boolean {
 }
 
 export default function InventoryPage() {
+  const { formatPrice } = useCurrency();
   const [products, setProducts] = useState<Product[]>([]);
   const [stats, setStats] = useState<InventoryStat | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -207,8 +209,8 @@ export default function InventoryPage() {
           <StatCard label="In Stock" value={stats.in_stock} icon="✓" color="emerald" />
           <StatCard label="Low Stock" value={stats.low_stock} icon="⚠" color="amber" />
           <StatCard label="Out of Stock" value={stats.out_of_stock} icon="✕" color="red" />
-          <StatCard label="Total Value" value={`$${stats.total_value.toFixed(2)}`} icon="💰" />
-          <StatCard label="Retail Value" value={`$${stats.total_retail_value.toFixed(2)}`} icon="💵" />
+          <StatCard label="Total Value" value={formatPrice(stats.total_value)} icon="💰" />
+          <StatCard label="Retail Value" value={formatPrice(stats.total_retail_value)} icon="💵" />
         </div>
       )}
 
@@ -330,6 +332,7 @@ export default function InventoryPage() {
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Stock</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Price</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Profit %</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Supplier</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
                 </tr>
@@ -358,8 +361,11 @@ export default function InventoryPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-sm font-semibold text-slate-900 dark:text-white">${product.selling_price.toFixed(2)}</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">Cost: ${product.cost_price.toFixed(2)}</div>
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">{formatPrice(product.selling_price)}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Cost: {formatPrice(product.cost_price)}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{product.profit_percentage || 0}%</span>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm text-slate-600 dark:text-slate-400">{product.supplier || "—"}</span>

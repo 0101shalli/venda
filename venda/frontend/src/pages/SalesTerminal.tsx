@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import BarcodeScanner, { ProductInfo } from "../components/BarcodeScanner";
+import { useCurrency } from "../context/CurrencyContext";
 
 type CartItem = ProductInfo & { quantity: number };
 
 function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
+  const { formatPrice } = useCurrency();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductInfo[]>([]);
   const [open, setOpen] = useState(false);
@@ -85,7 +87,7 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
                 <p className="text-sm font-semibold text-slate-800 dark:text-white">{p.name}</p>
                 <p className="text-xs text-slate-400 dark:text-slate-500">{p.barcode}</p>
               </div>
-              <span className="ml-4 font-bold text-indigo-700 dark:text-sky-400">${p.selling_price.toFixed(2)}</span>
+              <span className="ml-4 font-bold text-indigo-700 dark:text-sky-400">{formatPrice(p.selling_price)}</span>
             </button>
           ))}
         </div>
@@ -109,13 +111,14 @@ function CartRow({
   onQtyChange: (id: number, qty: number) => void;
   onRemove: (id: number) => void;
 }) {
+  const { formatPrice } = useCurrency();
   const subtotal = item.selling_price * item.quantity;
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
       {/* Product info */}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{item.name}</p>
-        <p className="text-xs text-slate-400 dark:text-slate-500">${item.selling_price.toFixed(2)} each</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500">{formatPrice(item.selling_price)} each</p>
       </div>
 
       {/* Quantity stepper */}
@@ -146,7 +149,7 @@ function CartRow({
       </div>
 
       {/* Subtotal */}
-      <span className="w-20 text-right text-sm font-bold text-slate-800 dark:text-white">${subtotal.toFixed(2)}</span>
+      <span className="w-20 text-right text-sm font-bold text-slate-800 dark:text-white">{formatPrice(subtotal)}</span>
 
       {/* Remove */}
       <button
@@ -165,6 +168,7 @@ function CartRow({
 }
 
 export default function SalesTerminal() {
+  const { formatPrice } = useCurrency();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -322,15 +326,15 @@ export default function SalesTerminal() {
               <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span>${total.toFixed(2)}</span>
+                  <span>{formatPrice(total)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-slate-400 dark:text-slate-500">
                   <span>Tax (0%)</span>
-                  <span>$0.00</span>
+                  <span>{formatPrice(0)}</span>
                 </div>
                 <div className="mt-2 border-t border-slate-100 dark:border-slate-700 pt-2 flex justify-between text-base font-bold text-slate-800 dark:text-white">
                   <span>Total</span>
-                  <span className="text-indigo-700 dark:text-sky-400">${total.toFixed(2)}</span>
+                  <span className="text-indigo-700 dark:text-sky-400">{formatPrice(total)}</span>
                 </div>
               </div>
 
