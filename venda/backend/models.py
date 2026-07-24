@@ -33,10 +33,13 @@ class Product(SQLModel, table=True):
     category: str = Field(default="General", index=True)
     cost_price: float
     selling_price: float
+    profit_percentage: float = Field(default=0)
     current_stock: int = Field(default=0, index=True)
     min_stock_level: int = Field(default=0)
     reorder_point: int = Field(default=0)
     supplier: Optional[str] = None
+    supplier_email: Optional[str] = None
+    supplier_phone: Optional[str] = None
     warehouse_location: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -78,3 +81,9 @@ class SaleItem(SQLModel, table=True):
 
     sale: Optional[Sale] = Relationship(back_populates="sale_items")
     product: Optional[Product] = Relationship(back_populates="sale_items")
+
+
+class SystemSetting(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    key: str = Field(index=True, unique=True)
+    value: str
