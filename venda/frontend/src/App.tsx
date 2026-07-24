@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Route, Routes, Navigate, useNavigate } from "react-router-dom";
 import { useTheme } from "./context/ThemeContext";
+import { CurrencyProvider } from "./context/CurrencyContext";
 import Sidebar from "./components/Sidebar";
 import LoginPage from "./pages/LoginPage";
 import SalesTerminal from "./pages/SalesTerminal";
@@ -58,6 +59,7 @@ function App() {
   }
 
   return (
+    <CurrencyProvider>
     <div className={`min-h-screen flex ${theme === "dark" ? "dark" : ""}`}>
       <style>{`
         :root {
@@ -89,6 +91,7 @@ function App() {
         </Routes>
       </main>
     </div>
+    </CurrencyProvider>
   );
 }
 
