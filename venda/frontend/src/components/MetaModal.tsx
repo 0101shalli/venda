@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Product } from "./ProductModal";
+import { useCurrency } from "../context/CurrencyContext";
 
 type SalesData = {
   product_id: number;
@@ -23,6 +24,7 @@ type MetaModalProps = {
 };
 
 export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) {
+  const { formatPrice } = useCurrency();
   const [currentSlide, setCurrentSlide] = useState<"data" | "sales">("data");
   const [salesData, setSalesData] = useState<SalesData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -120,11 +122,11 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 border border-emerald-200 dark:border-emerald-900">
                 <p className="text-xs text-emerald-600 dark:text-emerald-400 uppercase font-semibold mb-1">Selling Price</p>
-                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">${product.selling_price.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{formatPrice(product.selling_price)}</p>
               </div>
               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-900">
                 <p className="text-xs text-blue-600 dark:text-blue-400 uppercase font-semibold mb-1">Cost Price</p>
-                <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">${product.cost_price.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{formatPrice(product.cost_price)}</p>
               </div>
             </div>
 
@@ -169,7 +171,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                   {(((product.selling_price - product.cost_price) / product.selling_price) * 100).toFixed(1)}%
                 </p>
                 <p className="text-sm text-indigo-600 dark:text-indigo-400">
-                  (${(product.selling_price - product.cost_price).toFixed(2)} per unit)
+                  ({formatPrice(product.selling_price - product.cost_price)} per unit)
                 </p>
               </div>
             </div>
@@ -197,7 +199,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                   </div>
                   <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-900">
                     <p className="text-xs text-blue-600 dark:text-blue-400 uppercase font-semibold mb-1">Revenue</p>
-                    <p className="text-3xl font-bold text-blue-700 dark:text-blue-400">${salesData.total_revenue.toFixed(2)}</p>
+                    <p className="text-3xl font-bold text-blue-700 dark:text-blue-400">{formatPrice(salesData.total_revenue)}</p>
                   </div>
                   <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-900">
                     <p className="text-xs text-purple-600 dark:text-purple-400 uppercase font-semibold mb-1">Avg Daily</p>
@@ -234,7 +236,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                               {item.quantity_sold}
                             </div>
                             <div className="w-20 text-right text-xs text-slate-600 dark:text-slate-400">
-                              ${item.revenue.toFixed(2)}
+                              {formatPrice(item.revenue)}
                             </div>
                           </div>
                         );
@@ -264,7 +266,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                             </td>
                             <td className="px-4 py-2 font-bold text-slate-900 dark:text-white">{item.quantity_sold}</td>
                             <td className="px-4 py-2 font-bold text-emerald-600 dark:text-emerald-400">
-                              ${item.revenue.toFixed(2)}
+                              {formatPrice(item.revenue)}
                             </td>
                           </tr>
                         ))}

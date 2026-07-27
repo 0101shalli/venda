@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import JsBarcode from "jsbarcode";
 import CameraScanner from "./CameraScanner";
+import { useCurrency } from "../context/CurrencyContext";
 
 export type Product = {
   id?: number;
@@ -39,6 +40,7 @@ type ProductModalProps = {
 const DEFAULT_CATEGORIES = ["General", "Electronics", "Logistics", "Apparel", "Food & Beverage", "Hardware"];
 
 export default function ProductModal({ isOpen, isEditMode, product, onClose, onSave, categories = DEFAULT_CATEGORIES }: ProductModalProps) {
+  const { currencySymbol } = useCurrency();
   const [formData, setFormData] = useState<Product>({
     barcode: "",
     name: "",
@@ -361,7 +363,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label htmlFor="cost_price" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Cost Price <span className="text-red-500">*</span>
+                  Cost Price ({currencySymbol}) <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="cost_price"
@@ -395,7 +397,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
               <div>
                 <label htmlFor="selling_price" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Selling Price <span className="text-red-500">*</span>
+                  Selling Price ({currencySymbol}) <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="selling_price"

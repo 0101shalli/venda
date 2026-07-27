@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import JsBarcode from "jsbarcode";
 import { Product } from "./ProductModal";
+import { useCurrency } from "../context/CurrencyContext";
 
 type BarcodeModalProps = {
   isOpen: boolean;
@@ -9,6 +10,7 @@ type BarcodeModalProps = {
 };
 
 export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalProps) {
+  const { formatPrice, currencySymbol } = useCurrency();
   const barcodeRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
@@ -78,7 +80,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
           <div class="product-info">${product.category}</div>
           <div class="product-name">${product.name}</div>
           <div class="barcode-image">${barcodeSVGString}</div>
-          <div class="product-price">$${product.selling_price.toFixed(2)}</div>
+          <div class="product-price">${formatPrice(product.selling_price)}</div>
         </div>
         <script>
           window.onload = function() {
@@ -154,7 +156,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
             {product.barcode}
           </div>
           <div className="text-2xl font-black text-sky-600">
-            ${product.selling_price.toFixed(2)}
+            {formatPrice(product.selling_price)}
           </div>
         </div>
 
@@ -162,7 +164,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
         <div className="grid grid-cols-2 gap-3 mb-6 bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
           <div>
             <p className="text-xs text-slate-500 dark:text-slate-400 uppercase">Cost</p>
-            <p className="font-bold text-slate-900 dark:text-white">${product.cost_price.toFixed(2)}</p>
+            <p className="font-bold text-slate-900 dark:text-white">{formatPrice(product.cost_price)}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500 dark:text-slate-400 uppercase">Stock</p>
