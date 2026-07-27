@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, ReactNode } from "react";
 import ProductModal, { Product } from "../components/ProductModal";
 import BarcodeModal from "../components/BarcodeModal";
 import MetaModal from "../components/MetaModal";
@@ -34,7 +34,7 @@ function fuzzySearch(query: string, text: string): boolean {
 }
 
 export default function InventoryPage() {
-  const { formatPrice } = useCurrency();
+  const { formatPrice, currencySymbol } = useCurrency();
   const [products, setProducts] = useState<Product[]>([]);
   const [stats, setStats] = useState<InventoryStat | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -209,8 +209,8 @@ export default function InventoryPage() {
           <StatCard label="In Stock" value={stats.in_stock} icon="✓" color="emerald" />
           <StatCard label="Low Stock" value={stats.low_stock} icon="⚠" color="amber" />
           <StatCard label="Out of Stock" value={stats.out_of_stock} icon="✕" color="red" />
-          <StatCard label="Total Value" value={formatPrice(stats.total_value)} icon="💰" />
-          <StatCard label="Retail Value" value={formatPrice(stats.total_retail_value)} icon="💵" />
+          <StatCard label="Total Value" value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_value)}</>} icon="💰" />
+          <StatCard label="Retail Value" value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_retail_value)}</>} icon="💵" />
         </div>
       )}
 
@@ -502,7 +502,7 @@ export default function InventoryPage() {
   );
 }
 
-function StatCard({ label, value, icon, color }: { label: string; value: string | number; icon: string; color?: string }) {
+function StatCard({ label, value, icon, color }: { label: string; value: string | number | ReactNode; icon: string; color?: string }) {
   const colorClass = {
     emerald: "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400",
     amber: "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400",

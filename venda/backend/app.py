@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import shutil
 import threading
 from datetime import datetime
 
@@ -10,8 +11,9 @@ except Exception:
     webview = None
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Response, Query
+from fastapi import FastAPI, HTTPException, Response, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -20,9 +22,11 @@ from sqlmodel import select, text
 try:
     from .database import create_db_and_tables, get_session, engine
     from .models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting
+    from .utils import send_receipt_to_printer
 except (ImportError, SystemError):
     from database import create_db_and_tables, get_session, engine
     from models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting
+    from utils import send_receipt_to_printer
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -37,17 +41,7 @@ app.add_middleware(
 
 static_dir = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 
-DEFAULT_CURRENCY_RATES = {
-    "USD": 1, "EUR": 0.85, "GBP": 0.73, "JPY": 149.5, "INR": 83.1,
-    "ZAR": 18.6, "ZMW": 25.5, "NGN": 1540, "PHP": 56.2, "BRL": 4.97,
-    "CHF": 0.88, "CAD": 1.36, "AUD": 1.53, "NZD": 1.67, "SGD": 1.34,
-    "MYR": 4.68, "KES": 153, "TZS": 2510, "UGX": 3780, "GHS": 14.9,
-    "XAF": 615.8, "XOF": 615.8, "ETB": 55.3, "MAD": 10.1, "DZD": 135.5,
-    "MGA": 4630, "CDF": 2540, "RWF": 1300, "BIF": 2830, "SOS": 568,
-    "SDG": 600, "EGP": 48.4, "LYD": 4.87, "TND": 3.12, "AOA": 832,
-    "MZN": 63.8, "BWP": 13.6, "SZL": 18.6, "LSL": 18.6, "NAD": 18.6,
-    "MWK": 1620, "ZWL": 3220, "SCR": 14.4, "DJF": 177.5, "KMF": 436.5,
-}
+
 
 
 def get_database_path() -> str:
@@ -124,6 +118,13 @@ def startup_event() -> None:
                 conn.execute(text(f"ALTER TABLE product ADD COLUMN {col_name} {col_def}"))
                 conn.commit()
 
+    # Schema migration: add disabled column to user table
+    with engine.connect() as conn:
+        user_cols = {row["name"] for row in conn.execute(text("PRAGMA table_info(user)")).mappings()}
+        if "disabled" not in user_cols:
+            conn.execute(text("ALTER TABLE user ADD COLUMN disabled INTEGER DEFAULT 0"))
+            conn.commit()
+
     with get_session() as session:
         admin = session.exec(select(User).where(User.username == "admin")).first()
         if not admin:
@@ -137,14 +138,18 @@ def startup_event() -> None:
             session.commit()
 
         defaults = {
-            "currency": "$",
+            "currency": "XAF",
             "default_profit_percentage": "0",
-            "currency_rates": json.dumps(DEFAULT_CURRENCY_RATES),
+            "receipt_printing": "false",
+            "card_button_disabled": "false",
         }
         for key, value in defaults.items():
             existing = session.exec(select(SystemSetting).where(SystemSetting.key == key)).first()
             if not existing:
                 session.add(SystemSetting(key=key, value=value))
+            elif key == "currency" and existing.value in ("FCFA", "$", "USD"):
+                existing.value = "XAF"
+                session.add(existing)
         session.commit()
 
 
@@ -154,6 +159,9 @@ def login(request: LoginRequest, response: Response):
         user = session.exec(select(User).where(User.username == request.username)).first()
         if not user or not verify_password(request.password, user.password_hash):
             raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        if user.disabled:
+            raise HTTPException(status_code=403, detail="Account is disabled")
 
         if user.is_first_login:
             response.status_code = 403
@@ -259,9 +267,10 @@ def change_password(request: ChangePasswordRequest):
 @app.get("/api/settings")
 def get_settings():
     with get_session() as session:
-        currency = _get_setting(session, "currency") or "$"
-        currency_rates = _get_setting(session, "currency_rates") or json.dumps(DEFAULT_CURRENCY_RATES)
-    return {"currency": currency, "currency_rates": currency_rates}
+        currency = _get_setting(session, "currency") or "XAF"
+        receipt_printing = _get_setting(session, "receipt_printing") or "false"
+        card_button_disabled = _get_setting(session, "card_button_disabled") or "false"
+    return {"currency": currency, "receipt_printing": receipt_printing, "card_button_disabled": card_button_disabled}
 
 
 @app.put("/api/settings")
@@ -269,8 +278,10 @@ def update_settings(body: dict):
     with get_session() as session:
         if "currency" in body:
             _set_setting(session, "currency", str(body["currency"]))
-        if "currency_rates" in body:
-            _set_setting(session, "currency_rates", str(body["currency_rates"]))
+        if "receipt_printing" in body:
+            _set_setting(session, "receipt_printing", str(body["receipt_printing"]))
+        if "card_button_disabled" in body:
+            _set_setting(session, "card_button_disabled", str(body["card_button_disabled"]))
         session.commit()
     return {"message": "Settings updated"}
 
@@ -336,6 +347,12 @@ def update_profile(username: str = Query(...), body: dict = None):
 # User management endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/api/users/has-manager1")
+def has_manager1():
+    with get_session() as session:
+        manager1 = session.exec(select(User).where(User.role == "manager1")).first()
+        return {"exists": manager1 is not None}
+
 @app.get("/api/users")
 def get_users():
     with get_session() as session:
@@ -346,6 +363,7 @@ def get_users():
                 "username": u.username,
                 "role": u.role,
                 "is_first_login": u.is_first_login,
+                "disabled": u.disabled,
                 "full_name": u.full_name or "",
                 "email": u.email or "",
                 "bio": u.bio or "",
@@ -369,11 +387,23 @@ def create_user(body: dict):
         raise HTTPException(status_code=400, detail="Username is required")
     if not password:
         raise HTTPException(status_code=400, detail="Password is required")
+    if role not in ("admin", "manager1", "manager2", "cashier"):
+        raise HTTPException(status_code=400, detail="Invalid role")
 
     with get_session() as session:
         existing = session.exec(select(User).where(User.username == username)).first()
         if existing:
             raise HTTPException(status_code=400, detail="Username already exists")
+
+        # Enforce role limits
+        if role == "admin":
+            admin_count = len([u for u in session.exec(select(User)).all() if u.role == "admin"])
+            if admin_count >= 2:
+                raise HTTPException(status_code=400, detail="Maximum 2 administrators allowed")
+        elif role == "manager1":
+            m1_count = len([u for u in session.exec(select(User)).all() if u.role == "manager1"])
+            if m1_count >= 1:
+                raise HTTPException(status_code=400, detail="Only 1 Manager1 is allowed")
 
         user = User(
             username=username,
@@ -405,12 +435,30 @@ def update_user(user_id: int, body: dict):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
+        # Prevent disabling the admin user
+        if user.username == "admin" and body.get("disabled"):
+            raise HTTPException(status_code=400, detail="Cannot disable the main administrator account")
+
         for field in ["full_name", "email", "bio", "profile_image",
                        "social_twitter", "social_facebook", "social_linkedin", "social_instagram"]:
             if field in body:
                 setattr(user, field, body[field])
         if "role" in body:
-            user.role = body["role"]
+            new_role = body["role"]
+            if new_role not in ("admin", "manager1", "manager2", "cashier"):
+                raise HTTPException(status_code=400, detail="Invalid role")
+            # Enforce role limits on role change
+            if new_role == "admin" and user.role != "admin":
+                admin_count = len([u for u in session.exec(select(User)).all() if u.role == "admin"])
+                if admin_count >= 2:
+                    raise HTTPException(status_code=400, detail="Maximum 2 administrators allowed")
+            elif new_role == "manager1" and user.role != "manager1":
+                m1_count = len([u for u in session.exec(select(User)).all() if u.role == "manager1"])
+                if m1_count >= 1:
+                    raise HTTPException(status_code=400, detail="Only 1 Manager1 is allowed")
+            user.role = new_role
+        if "disabled" in body:
+            user.disabled = bool(body["disabled"])
         if body.get("password"):
             user.password_hash = get_password_hash(body["password"])
 
@@ -491,9 +539,12 @@ def create_sale(body: dict):
     if not items:
         raise HTTPException(status_code=400, detail="No items in the sale")
 
+    receipt_text = None
+
     with get_session() as session:
         total = 0.0
         sale_items = []
+        item_details = []
         for item in items:
             product = session.get(Product, item["product_id"])
             if not product:
@@ -506,6 +557,7 @@ def create_sale(body: dict):
             line_total = product.selling_price * qty
             total += line_total
             sale_items.append({"product_id": product.id, "quantity": qty, "unit_price": product.selling_price})
+            item_details.append({"name": product.name, "qty": qty, "price": product.selling_price, "line_total": line_total})
 
             # Record inventory transaction
             user = session.exec(select(User)).first()
@@ -519,6 +571,8 @@ def create_sale(body: dict):
 
         invoice = f"INV-{int(datetime.utcnow().timestamp() * 1000)}"
         user = session.exec(select(User)).first()
+        currency = _get_setting(session, "currency") or "XAF"
+        receipt_printing = _get_setting(session, "receipt_printing") or "false"
         sale = Sale(
             invoice_number=invoice,
             total_amount=total,
@@ -533,6 +587,31 @@ def create_sale(body: dict):
             session.add(SaleItem(sale_id=sale.id, product_id=si["product_id"],
                                  quantity=si["quantity"], unit_price=si["unit_price"]))
         session.commit()
+
+        if receipt_printing == "true":
+            lines = []
+            lines.append("=" * 32)
+            lines.append("       GENERAL STORE")
+            lines.append("=" * 32)
+            lines.append(f"Invoice: {invoice}")
+            lines.append(f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}")
+            lines.append(f"Cashier: {user.username if user else 'N/A'}")
+            lines.append(f"Payment: {payment_method}")
+            lines.append("-" * 32)
+            for d in item_details:
+                lines.append(f"{d['name'][:20]:<20} {d['qty']:>3} x {currency} {d['price']:>10.2f}")
+                lines.append(f"{'':>24} {currency} {d['line_total']:>10.2f}")
+            lines.append("-" * 32)
+            lines.append(f"{'TOTAL':>24} {currency} {total:>10.2f}")
+            lines.append("=" * 32)
+            lines.append("       THANK YOU!")
+            lines.append("=" * 32)
+            receipt_text = "\n".join(lines)
+
+        if receipt_text:
+            def _print():
+                send_receipt_to_printer(receipt_text)
+            threading.Thread(target=_print, daemon=True).start()
 
         return {"id": sale.id, "invoice_number": invoice, "total_amount": total, "message": "Sale completed"}
 
@@ -744,22 +823,32 @@ def get_product_sales(product_id: int):
         total_sold = sum(i.quantity for i in items)
         total_revenue = sum(i.unit_price * i.quantity for i in items)
 
-        monthly = {}
+        daily = {}
         for item in items:
             sale = session.get(Sale, item.sale_id)
             if sale and sale.timestamp:
-                month_key = sale.timestamp.strftime("%Y-%m")
-                if month_key not in monthly:
-                    monthly[month_key] = {"month": month_key, "quantity": 0, "revenue": 0}
-                monthly[month_key]["quantity"] += item.quantity
-                monthly[month_key]["revenue"] += item.unit_price * item.quantity
+                day_key = sale.timestamp.strftime("%Y-%m-%d")
+                if day_key not in daily:
+                    daily[day_key] = {"sale_date": day_key, "items_sold": 0, "quantity_sold": 0, "revenue": 0}
+                daily[day_key]["items_sold"] += 1
+                daily[day_key]["quantity_sold"] += item.quantity
+                daily[day_key]["revenue"] += item.unit_price * item.quantity
+
+        sales_by_date = sorted(daily.values(), key=lambda x: x["sale_date"], reverse=True)
+
+        avg_daily_sales = 0.0
+        if sales_by_date:
+            unique_days = len(sales_by_date)
+            avg_daily_sales = total_sold / unique_days if unique_days > 0 else 0.0
 
         return {
             "product_id": product_id,
             "product_name": product.name,
+            "barcode": product.barcode,
             "total_sold": total_sold,
             "total_revenue": total_revenue,
-            "monthly": sorted(monthly.values(), key=lambda x: x["month"]),
+            "avg_daily_sales": round(avg_daily_sales, 1),
+            "sales_by_date": sales_by_date,
         }
 
 
@@ -887,6 +976,72 @@ def adjust_stock(product_id: int, adjustment: StockAdjustmentRequest):
             "current_stock": product.current_stock,
             "message": f"Stock adjusted by {adjustment.quantity_change}",
         }
+
+
+# ---------------------------------------------------------------------------
+# Database management endpoints (admin only)
+# ---------------------------------------------------------------------------
+
+def _get_db_file_path() -> str:
+    from database import get_data_directory
+    return str(get_data_directory() / "store_data.db")
+
+
+@app.get("/api/admin/export-db")
+def export_database():
+    db_path = _get_db_file_path()
+    if not os.path.exists(db_path):
+        raise HTTPException(status_code=404, detail="Database file not found")
+
+    def iter_file():
+        with open(db_path, "rb") as f:
+            yield from f
+
+    return StreamingResponse(
+        iter_file(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": "attachment; filename=store_data_backup.db"},
+    )
+
+
+@app.post("/api/admin/import-db")
+async def import_database(file: UploadFile = File(...)):
+    db_path = _get_db_file_path()
+    backup_path = db_path + ".pre_import_backup"
+    if os.path.exists(db_path):
+        shutil.copy2(db_path, backup_path)
+    try:
+        content = await file.read()
+        with open(db_path, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        if os.path.exists(backup_path):
+            shutil.copy2(backup_path, db_path)
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
+
+    return {"message": "Database imported successfully. Please restart the server."}
+
+
+@app.post("/api/admin/backup-db")
+def backup_database():
+    db_path = _get_db_file_path()
+    if not os.path.exists(db_path):
+        raise HTTPException(status_code=404, detail="Database file not found")
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    backup_filename = f"store_data_{timestamp}.db"
+    backup_path = os.path.join(os.path.dirname(db_path), backup_filename)
+    shutil.copy2(db_path, backup_path)
+
+    def iter_file():
+        with open(backup_path, "rb") as f:
+            yield from f
+
+    return StreamingResponse(
+        iter_file(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={backup_filename}"},
+    )
 
 
 # Mount static frontend AFTER all API routes so /api/* routes always take priority
