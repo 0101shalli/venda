@@ -35,7 +35,6 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
     }, 250);
   }, [query]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
@@ -115,13 +114,11 @@ function CartRow({
   const subtotal = item.selling_price * item.quantity;
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
-      {/* Product info */}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{item.name}</p>
         <p className="text-xs text-slate-400 dark:text-slate-500">{formatPrice(item.selling_price)} each</p>
       </div>
 
-      {/* Quantity stepper */}
       <div className="flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1">
         <button
           id={`qty-down-${item.id}`}
@@ -148,10 +145,8 @@ function CartRow({
         </button>
       </div>
 
-      {/* Subtotal */}
       <span className="w-20 text-right text-sm font-bold text-slate-800 dark:text-white">{formatPrice(subtotal)}</span>
 
-      {/* Remove */}
       <button
         id={`remove-${item.id}`}
         type="button"
@@ -172,6 +167,24 @@ export default function SalesTerminal() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [cardDisabled, setCardDisabled] = useState(false);
+  const [hasManager1, setHasManager1] = useState<boolean | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/settings").then((res) => res.json()),
+      fetch("/api/users/has-manager1").then((res) => res.json()),
+    ])
+      .then(([settings, managerCheck]) => {
+        setCardDisabled(settings.card_button_disabled === "true");
+        setHasManager1(managerCheck.exists);
+      })
+      .catch(() => {
+        setHasManager1(false);
+      })
+      .finally(() => setLoadingConfig(false));
+  }, []);
 
   const addToCart = useCallback((product: ProductInfo) => {
     setCart((prev) => {
@@ -237,19 +250,42 @@ export default function SalesTerminal() {
   const total = cart.reduce((sum, i) => sum + i.selling_price * i.quantity, 0);
   const itemCount = cart.reduce((sum, i) => sum + i.quantity, 0);
 
+  if (loadingConfig) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-sky-500"></div>
+      </div>
+    );
+  }
+
+  if (!hasManager1) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="rounded-3xl bg-white dark:bg-slate-900 p-12 text-center border border-slate-200 dark:border-slate-800 shadow-sm max-w-md">
+          <div className="text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">System Not Configured</h2>
+          <p className="text-slate-500 dark:text-slate-400 mb-4">
+            A Manager 1 user must be created and the system currency configured before sales can be made.
+          </p>
+          <p className="text-sm text-slate-400 dark:text-slate-500">
+            Please ask an administrator to create a Manager 1 account.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-screen flex-col gap-4 p-1 lg:flex-row lg:gap-6">
 
-      {/* ── LEFT COLUMN: Search + Barcode ── */}
+      {/* LEFT COLUMN: Search + Barcode */}
       <div className="flex flex-col gap-4 lg:w-[55%]">
 
-        {/* Page header */}
         <div className="rounded-3xl bg-gradient-to-br from-indigo-600 dark:from-sky-500 to-violet-600 dark:to-sky-600 px-6 py-5 text-white shadow-md">
           <h1 className="text-2xl font-bold tracking-tight">Sales Terminal</h1>
           <p className="mt-0.5 text-sm text-indigo-200 dark:text-sky-200">Search or scan products to build your cart</p>
         </div>
 
-        {/* Product search */}
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-sm border border-slate-200 dark:border-slate-700">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
             🔍 Product Search
@@ -257,7 +293,6 @@ export default function SalesTerminal() {
           <SearchBar onSelect={addToCart} />
         </div>
 
-        {/* Barcode scanner */}
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-sm border border-slate-200 dark:border-slate-700">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
             📷 Barcode Scanner
@@ -266,11 +301,10 @@ export default function SalesTerminal() {
         </div>
       </div>
 
-      {/* ── RIGHT COLUMN: Checkout ── */}
+      {/* RIGHT COLUMN: Checkout */}
       <div className="flex flex-col gap-4 lg:w-[45%]">
         <div className="sticky top-4 flex flex-col gap-4">
 
-          {/* Cart header */}
           <div className="flex items-center justify-between rounded-3xl bg-white dark:bg-slate-900 px-5 py-4 shadow-sm border border-slate-200 dark:border-slate-700">
             <div>
               <h2 className="text-lg font-bold text-slate-800 dark:text-white">Checkout</h2>
@@ -288,7 +322,6 @@ export default function SalesTerminal() {
             )}
           </div>
 
-          {/* Cart items */}
           <div className="flex-1 overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-4 shadow-sm border border-slate-200 dark:border-slate-700">
             {checkoutStatus === "success" && (
               <div className="mb-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 p-4 text-sm font-medium text-emerald-600 dark:text-emerald-400 text-center border border-emerald-200 dark:border-emerald-950">
@@ -320,7 +353,6 @@ export default function SalesTerminal() {
             )}
           </div>
 
-          {/* Order summary + checkout */}
           {cart.length > 0 && (
             <div className="rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-sm border border-slate-200 dark:border-slate-700">
               <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
@@ -351,11 +383,15 @@ export default function SalesTerminal() {
                 <button
                   id="checkout-card"
                   type="button"
-                  disabled={checkoutStatus === "loading"}
+                  disabled={checkoutStatus === "loading" || cardDisabled}
                   onClick={() => handleCheckout("Card")}
-                  className="rounded-2xl bg-indigo-600 dark:bg-sky-500 py-3 text-sm font-bold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-all disabled:opacity-50"
+                  className={`rounded-2xl py-3 text-sm font-bold active:scale-95 transition-all disabled:opacity-50 ${
+                    cardDisabled
+                      ? "bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed"
+                      : "bg-indigo-600 dark:bg-sky-500 text-white hover:bg-indigo-700 dark:hover:bg-sky-600"
+                  }`}
                 >
-                  {checkoutStatus === "loading" ? "..." : "💳 Card"}
+                  {checkoutStatus === "loading" ? "..." : cardDisabled ? "🚫 Card" : "💳 Card"}
                 </button>
               </div>
             </div>
