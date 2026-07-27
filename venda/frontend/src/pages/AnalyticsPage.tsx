@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useCurrency } from "../context/CurrencyContext";
 
 interface RevenueTrend {
@@ -34,6 +34,76 @@ interface DetailedAnalytics {
   inventory_history: InventoryHistory[];
 }
 
+function exportToExcel(headers: string[], rows: (string | number)[][], filename: string) {
+  const csvContent = [
+    headers.join(","),
+    ...rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")),
+  ].join("\n");
+  const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function printChartAsPdf(title: string, svgElement: Element | null) {
+  if (!svgElement) return;
+  const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
+  svgClone.setAttribute("width", "800");
+  svgClone.setAttribute("height", "400");
+  const svgString = new XMLSerializer().serializeToString(svgClone);
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return;
+  printWindow.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
+    <style>@page{size:landscape;margin:1cm}body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif}h1{font-size:18px;margin-bottom:8px;color:#1e293b}.chart-container{width:100%}svg{width:100%;height:auto}@media print{body{padding:0}}</style></head><body>
+    <h1>${title}</h1><div class="chart-container">${svgString}</div>
+    <script>window.onload=function(){window.print();window.close()}<\/script></body></html>`);
+  printWindow.document.close();
+}
+
+function ChartTile({
+  title,
+  children,
+  chartRef,
+  exportHeaders,
+  exportRows,
+  exportFilename,
+}: {
+  title: string;
+  children: React.ReactNode;
+  chartRef: React.RefObject<HTMLDivElement>;
+  exportHeaders: string[];
+  exportRows: (string | number)[][];
+  exportFilename: string;
+}) {
+  return (
+    <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
+      <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">{title}</h3>
+      <div className="w-full aspect-[2.2/1]" ref={chartRef}>
+        {children}
+      </div>
+      <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+        <button
+          onClick={() => exportToExcel(exportHeaders, exportRows, exportFilename)}
+          className="flex items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          Export Excel
+        </button>
+        <button
+          onClick={() => printChartAsPdf(title, chartRef.current?.querySelector("svg") || null)}
+          className="flex items-center gap-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+          Print PDF
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyticsPage() {
   const { formatPrice, currencySymbol } = useCurrency();
   const [data, setData] = useState<DetailedAnalytics | null>(null);
@@ -46,6 +116,14 @@ export default function AnalyticsPage() {
     value: string;
     show: boolean;
   }>({ x: 0, y: 0, title: "", value: "", show: false });
+
+  const chartRefs = {
+    revenue: useMemo(() => ({ current: null as HTMLDivElement | null }), []),
+    products: useMemo(() => ({ current: null as HTMLDivElement | null }), []),
+    hours: useMemo(() => ({ current: null as HTMLDivElement | null }), []),
+    seasonal: useMemo(() => ({ current: null as HTMLDivElement | null }), []),
+    inventory: useMemo(() => ({ current: null as HTMLDivElement | null }), []),
+  };
 
   useEffect(() => {
     fetch("/api/analytics/detailed")
@@ -87,9 +165,10 @@ export default function AnalyticsPage() {
 
   const showTooltip = (e: React.MouseEvent, title: string, value: string) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const parentRect = e.currentTarget.parentElement?.getBoundingClientRect();
-    const x = rect.left - (parentRect?.left || 0) + rect.width / 2;
-    const y = rect.top - (parentRect?.top || 0) - 10;
+    const parentRect = e.currentTarget.closest(".chart-container, [class*='aspect-']")?.getBoundingClientRect();
+    if (!parentRect) return;
+    const x = rect.left - parentRect.left + rect.width / 2;
+    const y = rect.top - parentRect.top - 10;
     setTooltip({ x, y, title, value, show: true });
   };
 
@@ -113,7 +192,6 @@ export default function AnalyticsPage() {
     );
   }
 
-  // Calculate high-level metrics
   const totalRevenue = data.revenue_trends.reduce((sum, item) => sum + item.revenue, 0);
   const totalItemsSold = data.items_sold.reduce((sum, item) => sum + item.quantity, 0);
   const currentValuation = data.inventory_history[data.inventory_history.length - 1]?.value || 0;
@@ -121,10 +199,9 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6 pb-12 relative">
-      {/* Tooltip component */}
       {tooltip.show && (
         <div
-          className="absolute z-50 pointer-events-none rounded-xl bg-slate-900/95 dark:bg-slate-950/95 text-white px-3 py-2 text-xs shadow-xl border border-slate-700/50 backdrop-blur-sm -translate-x-1/2 -translate-y-full transition-all duration-100 font-medium"
+          className="absolute z-50 pointer-events-none rounded-xl bg-slate-900/95 dark:bg-slate-950/95 text-white px-3 py-2 text-xs shadow-xl border border-slate-700/50 backdrop-blur-sm -translate-x-1/2 -translate-y-full"
           style={{ left: `${tooltip.x}px`, top: `${tooltip.y}px` }}
         >
           <div className="text-slate-400 font-normal">{tooltip.title}</div>
@@ -132,7 +209,6 @@ export default function AnalyticsPage() {
         </div>
       )}
 
-      {/* Header */}
       <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
         <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Interactive Analytics</h2>
         <p className="mt-2 text-slate-500 dark:text-slate-400">
@@ -140,7 +216,6 @@ export default function AnalyticsPage() {
         </p>
       </div>
 
-      {/* Stats Summary Cards */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">30-Day Revenue</p>
@@ -162,49 +237,69 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Charts Layout */}
       <div className="grid gap-6 lg:grid-cols-2">
-        
-        {/* 1. Revenue Trends Line Chart */}
-        <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800 relative">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Revenue Trends (Last 30 Days)</h3>
-          <div className="w-full aspect-[2.2/1]">
-            <RevenueTrendsChart trends={data.revenue_trends} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
-          </div>
-        </div>
+        <ChartTile
+          title="Revenue Trends (Last 30 Days)"
+          chartRef={chartRefs.revenue}
+          exportHeaders={["Date", "Revenue"]}
+          exportRows={data.revenue_trends.map((t) => [t.date, t.revenue])}
+          exportFilename="revenue-trends"
+        >
+          <RevenueTrendsChart trends={data.revenue_trends} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
+        </ChartTile>
 
-        {/* 2. Top Selling Products Horizontal Bar Chart */}
-        <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Top-Selling Products</h3>
-          <div className="w-full aspect-[2.2/1]">
-            <TopProductsChart products={data.items_sold} onHover={showTooltip} onLeave={hideTooltip} />
-          </div>
-        </div>
+        <ChartTile
+          title="Top-Selling Products"
+          chartRef={chartRefs.products}
+          exportHeaders={["Product", "Quantity Sold"]}
+          exportRows={data.items_sold.map((p) => [p.name, p.quantity])}
+          exportFilename="top-products"
+        >
+          <TopProductsChart products={data.items_sold} onHover={showTooltip} onLeave={hideTooltip} />
+        </ChartTile>
 
-        {/* 3. Daily Peak Hours Bar Chart */}
-        <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Daily Peak Sales Hours</h3>
-          <div className="w-full aspect-[2.2/1]">
-            <PeakHoursChart hours={data.peak_hours} onHover={showTooltip} onLeave={hideTooltip} />
-          </div>
-        </div>
+        <ChartTile
+          title="Daily Peak Sales Hours"
+          chartRef={chartRefs.hours}
+          exportHeaders={["Hour", "Orders"]}
+          exportRows={data.peak_hours.map((h) => [`${h.hour}:00`, h.orders])}
+          exportFilename="peak-hours"
+        >
+          <PeakHoursChart hours={data.peak_hours} onHover={showTooltip} onLeave={hideTooltip} />
+        </ChartTile>
 
-        {/* 4. Seasonal Sales Area Chart */}
-        <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">Monthly Seasonal Sales</h3>
-          <div className="w-full aspect-[2.2/1]">
-            <SeasonalSalesChart sales={data.seasonal_sales} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
-          </div>
-        </div>
+        <ChartTile
+          title="Monthly Seasonal Sales"
+          chartRef={chartRefs.seasonal}
+          exportHeaders={["Month", "Revenue"]}
+          exportRows={data.seasonal_sales.map((s) => [s.month, s.revenue])}
+          exportFilename="seasonal-sales"
+        >
+          <SeasonalSalesChart sales={data.seasonal_sales} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
+        </ChartTile>
 
-        {/* 5. Inventory Valuation Chart */}
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800 lg:col-span-2">
           <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">7-Day Inventory Valuation Trend</h3>
-          <div className="w-full aspect-[3.5/1]">
+          <div className="w-full aspect-[3.5/1]" ref={chartRefs.inventory}>
             <InventoryValuationChart history={data.inventory_history} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
           </div>
+          <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <button
+              onClick={() => exportToExcel(["Date", "Value"], data.inventory_history.map((h) => [h.date, h.value]), "inventory-valuation")}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Export Excel
+            </button>
+            <button
+              onClick={() => printChartAsPdf("7-Day Inventory Valuation Trend", chartRefs.inventory.current?.querySelector("svg") || null)}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+              Print PDF
+            </button>
+          </div>
         </div>
-
       </div>
     </div>
   );
@@ -237,9 +332,8 @@ function RevenueTrendsChart({
   const minVal = Math.min(...trends.map((t) => t.revenue), 0);
   const range = maxVal - minVal || 1;
 
-  // Make coordinates
   const points = trends.map((t, idx) => {
-    const x = paddingLeft + (idx / (trends.length - 1)) * chartW;
+    const x = paddingLeft + (idx / Math.max(trends.length - 1, 1)) * chartW;
     const y = paddingTop + chartH - ((t.revenue - minVal) / range) * chartH;
     return { x, y, data: t };
   });
@@ -261,7 +355,6 @@ function RevenueTrendsChart({
         </linearGradient>
       </defs>
       
-      {/* Grid Lines */}
       {[0, 0.25, 0.5, 0.75, 1].map((r, i) => {
         const y = paddingTop + chartH * r;
         const val = maxVal - r * range;
@@ -275,7 +368,6 @@ function RevenueTrendsChart({
         );
       })}
 
-      {/* Areas & Lines */}
       {points.length > 0 && (
         <>
           <path d={areaD} fill="url(#revGrad)" />
@@ -283,21 +375,19 @@ function RevenueTrendsChart({
         </>
       )}
 
-      {/* Dots for interaction */}
       {points.map((p, idx) => (
         <circle
           key={idx}
           cx={p.x}
           cy={p.y}
           r="4.5"
-          className="fill-sky-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:r-6 hover:fill-sky-400 transition-all duration-150"
+          className="fill-sky-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:fill-sky-400"
           strokeWidth="1.5"
           onMouseEnter={(e) => onHover(e, new Date(p.data.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), `${currencySymbol}${p.data.revenue.toFixed(2)}`)}
           onMouseLeave={onLeave}
         />
       ))}
 
-      {/* Bottom Axis Label (Only first, middle, last to avoid crowding) */}
       {trends.length > 1 && (
         <>
           <text x={points[0].x} y={h - 10} textAnchor="start" className="text-[10px] fill-slate-400 font-semibold">
@@ -351,7 +441,6 @@ function TopProductsChart({
 
         return (
           <g key={idx}>
-            {/* Label */}
             <text
               x={labelWidth - 10}
               y={y + barHeight / 2 + 4}
@@ -360,8 +449,6 @@ function TopProductsChart({
             >
               {p.name.length > 12 ? p.name.substring(0, 10) + "..." : p.name}
             </text>
-
-            {/* Bar */}
             <rect
               x={labelWidth}
               y={y}
@@ -369,12 +456,10 @@ function TopProductsChart({
               height={barHeight}
               rx="4"
               fill="url(#barGrad)"
-              className="cursor-pointer hover:opacity-90 transition-opacity"
+              className="cursor-pointer hover:opacity-80"
               onMouseEnter={(e) => onHover(e, p.name, `${p.quantity} items sold`)}
               onMouseLeave={onLeave}
             />
-
-            {/* Count text */}
             <text
               x={labelWidth + barWidth + 8}
               y={y + barHeight / 2 + 4}
@@ -421,7 +506,6 @@ function PeakHoursChart({
         </linearGradient>
       </defs>
 
-      {/* Grid Lines */}
       {[0, 0.5, 1].map((r, i) => {
         const y = paddingTop + chartH * r;
         const val = maxVal - r * maxVal;
@@ -439,8 +523,6 @@ function PeakHoursChart({
         const barHeight = (item.orders / maxVal) * chartH;
         const x = paddingLeft + idx * step + (step - barWidth) / 2;
         const y = paddingTop + chartH - barHeight;
-
-        // Label formatting: show label every 3 hours to avoid crowd
         const showLabel = idx % 3 === 0;
 
         return (
@@ -452,7 +534,7 @@ function PeakHoursChart({
               height={barHeight}
               rx="3"
               fill="url(#colGrad)"
-              className="cursor-pointer hover:opacity-90 transition-opacity"
+              className="cursor-pointer hover:opacity-80"
               onMouseEnter={(e) => onHover(e, `${item.hour}:00 - Hour`, `${item.orders} orders placed`)}
               onMouseLeave={onLeave}
             />
@@ -499,7 +581,6 @@ function SeasonalSalesChart({
     return { x, y, data: s };
   });
 
-  // Calculate bezier curves for smooth layout
   let linePath = "";
   if (points.length > 0) {
     linePath = `M ${points[0].x} ${points[0].y}`;
@@ -525,7 +606,6 @@ function SeasonalSalesChart({
         </linearGradient>
       </defs>
 
-      {/* Grid Lines */}
       {[0, 0.5, 1].map((r, i) => {
         const y = paddingTop + chartH * r;
         const val = maxVal - r * range;
@@ -546,21 +626,19 @@ function SeasonalSalesChart({
         </>
       )}
 
-      {/* Smooth nodes */}
       {points.map((p, idx) => (
         <circle
           key={idx}
           cx={p.x}
           cy={p.y}
           r="4.5"
-          className="fill-amber-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:r-6 hover:fill-amber-400 transition-all duration-150"
+          className="fill-amber-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:fill-amber-400"
           strokeWidth="1.5"
           onMouseEnter={(e) => onHover(e, p.data.month, `${currencySymbol}${p.data.revenue.toFixed(2)}`)}
           onMouseLeave={onLeave}
         />
       ))}
 
-      {/* Bottom Labels */}
       {sales.map((item, idx) => {
         const x = paddingLeft + (idx / Math.max(sales.length - 1, 1)) * chartW;
         return (
@@ -621,7 +699,6 @@ function InventoryValuationChart({
         </linearGradient>
       </defs>
 
-      {/* Grid Lines */}
       {[0, 0.5, 1].map((r, i) => {
         const y = paddingTop + chartH * r;
         const val = maxVal - r * range;
@@ -642,21 +719,19 @@ function InventoryValuationChart({
         </>
       )}
 
-      {/* Dots */}
       {points.map((p, idx) => (
         <circle
           key={idx}
           cx={p.x}
           cy={p.y}
           r="5"
-          className="fill-emerald-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:r-6 hover:fill-emerald-400 transition-all duration-150"
+          className="fill-emerald-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:fill-emerald-400"
           strokeWidth="1.5"
           onMouseEnter={(e) => onHover(e, new Date(p.data.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), `Valuation: ${currencySymbol}${p.data.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`)}
           onMouseLeave={onLeave}
         />
       ))}
 
-      {/* Bottom Labels */}
       {history.map((item, idx) => {
         const x = paddingLeft + (idx / Math.max(history.length - 1, 1)) * chartW;
         return (
