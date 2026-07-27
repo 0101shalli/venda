@@ -17,66 +17,9 @@ interface ProfileData {
   social_instagram: string;
 }
 
-const CURRENCIES = [
-  { symbol: "$", name: "US Dollar ($)", code: "USD" },
-  { symbol: "€", name: "Euro (€)", code: "EUR" },
-  { symbol: "£", name: "British Pound (£)", code: "GBP" },
-  { symbol: "¥", name: "Japanese Yen (¥)", code: "JPY" },
-  { symbol: "₹", name: "Indian Rupee (₹)", code: "INR" },
-  { symbol: "R", name: "South African Rand (R)", code: "ZAR" },
-  { symbol: "K", name: "Zambian Kwacha (K)", code: "ZMW" },
-  { symbol: "₦", name: "Nigerian Naira (₦)", code: "NGN" },
-  { symbol: "₱", name: "Philippine Peso (₱)", code: "PHP" },
-  { symbol: "R$", name: "Brazilian Real (R$)", code: "BRL" },
-  { symbol: "CHF", name: "Swiss Franc (CHF)", code: "CHF" },
-  { symbol: "C$", name: "Canadian Dollar (C$)", code: "CAD" },
-  { symbol: "A$", name: "Australian Dollar (A$)", code: "AUD" },
-  { symbol: "NZ$", name: "New Zealand Dollar (NZ$)", code: "NZD" },
-  { symbol: "S$", name: "Singapore Dollar (S$)", code: "SGD" },
-  { symbol: "RM", name: "Malaysian Ringgit (RM)", code: "MYR" },
-  { symbol: "KSh", name: "Kenyan Shilling (KSh)", code: "KES" },
-  { symbol: "TSh", name: "Tanzanian Shilling (TSh)", code: "TZS" },
-  { symbol: "USh", name: "Ugandan Shilling (USh)", code: "UGX" },
-  { symbol: "GH₵", name: "Ghanaian Cedi (GH₵)", code: "GHS" },
-  { symbol: "FCFA", name: "Central African CFA Franc (FCFA)", code: "XAF" },
-  { symbol: "CFA", name: "West African CFA Franc (CFA)", code: "XOF" },
-  { symbol: "Br", name: "Ethiopian Birr (Br)", code: "ETB" },
-  { symbol: "MAD", name: "Moroccan Dirham (MAD)", code: "MAD" },
-  { symbol: "DA", name: "Algerian Dinar (DA)", code: "DZD" },
-  { symbol: "Ar", name: "Malagasy Ariary (Ar)", code: "MGA" },
-  { symbol: "FC", name: "Congolese Franc (FC)", code: "CDF" },
-  { symbol: "FRw", name: "Rwandan Franc (FRw)", code: "RWF" },
-  { symbol: "FBu", name: "Burundian Franc (FBu)", code: "BIF" },
-  { symbol: "Sh", name: "Somali Shilling (Sh)", code: "SOS" },
-  { symbol: "SDG", name: "Sudanese Pound (SDG)", code: "SDG" },
-  { symbol: "E£", name: "Egyptian Pound (E£)", code: "EGP" },
-  { symbol: "LD", name: "Libyan Dinar (LD)", code: "LYD" },
-  { symbol: "DT", name: "Tunisian Dinar (DT)", code: "TND" },
-  { symbol: "Kz", name: "Angolan Kwanza (Kz)", code: "AOA" },
-  { symbol: "MT", name: "Mozambican Metical (MT)", code: "MZN" },
-  { symbol: "P", name: "Botswana Pula (P)", code: "BWP" },
-  { symbol: "L", name: "Swazi Lilangeni (L)", code: "SZL" },
-  { symbol: "N$", name: "Namibian Dollar (N$)", code: "NAD" },
-  { symbol: "MK", name: "Malawian Kwacha (MK)", code: "MWK" },
-  { symbol: "$Z", name: "Zimbabwean Dollar ($Z)", code: "ZWL" },
-  { symbol: "SRe", name: "Seychellois Rupee (SRe)", code: "SCR" },
-];
-
-const DEFAULT_RATES: Record<string, number> = {
-  USD: 1, EUR: 0.85, GBP: 0.73, JPY: 149.5, INR: 83.1,
-  ZAR: 18.6, ZMW: 25.5, NGN: 1540, PHP: 56.2, BRL: 4.97,
-  CHF: 0.88, CAD: 1.36, AUD: 1.53, NZD: 1.67, SGD: 1.34,
-  MYR: 4.68, KES: 153, TZS: 2510, UGX: 3780, GHS: 14.9,
-  XAF: 615.8, XOF: 615.8, ETB: 55.3, MAD: 10.1, DZD: 135.5,
-  MGA: 4630, CDF: 2540, RWF: 1300, BIF: 2830, SOS: 568,
-  SDG: 600, EGP: 48.4, LYD: 4.87, TND: 3.12, AOA: 832,
-  MZN: 63.8, BWP: 13.6, SZL: 18.6, LSL: 18.6, NAD: 18.6,
-  MWK: 1620, ZWL: 3220, SCR: 14.4, DJF: 177.5, KMF: 436.5,
-};
-
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
-  const { refresh: refreshCurrency, formatPrice } = useCurrency();
+  const { formatPrice, refresh: refreshCurrency } = useCurrency();
   const auth = getAuth();
 
   const [loading, setLoading] = useState(true);
@@ -97,10 +40,9 @@ export default function SettingsPage() {
     social_instagram: "",
   });
 
-  const [currency, setCurrency] = useState("$");
-  const [currencySaving, setCurrencySaving] = useState(false);
-  const [currencyRates, setCurrencyRates] = useState<Record<string, number>>(DEFAULT_RATES);
-  const [ratesSaving, setRatesSaving] = useState(false);
+  const [receiptPrinting, setReceiptPrinting] = useState(false);
+  const [cardDisabled, setCardDisabled] = useState(false);
+  const [configSaving, setConfigSaving] = useState(false);
 
   const [defaultProfit, setDefaultProfit] = useState(0);
   const [profitSaving, setProfitSaving] = useState(false);
@@ -142,13 +84,8 @@ export default function SettingsPage() {
     fetch("/api/settings")
       .then((res) => res.json())
       .then((data) => {
-        if (data.currency) setCurrency(data.currency);
-        if (data.currency_rates) {
-          try {
-            const parsed = JSON.parse(data.currency_rates);
-            setCurrencyRates({ ...DEFAULT_RATES, ...parsed });
-          } catch { /* keep defaults */ }
-        }
+        setReceiptPrinting(data.receipt_printing === "true");
+        setCardDisabled(data.card_button_disabled === "true");
       })
       .catch(() => {});
 
@@ -161,29 +98,43 @@ export default function SettingsPage() {
       .catch(() => {});
   }, []);
 
-  const handleCurrencySave = async () => {
-    setCurrencySaving(true);
+  const handleReceiptPrintingToggle = async () => {
+    setConfigSaving(true);
+    const newValue = !receiptPrinting;
     try {
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currency, currency_rates: JSON.stringify(currencyRates) }),
+        body: JSON.stringify({ receipt_printing: String(newValue) }),
       });
-      if (!res.ok) throw new Error("Failed to save currency");
-      refreshCurrency();
-      setSaveMessage({ type: "success", text: "Currency updated successfully!" });
+      if (!res.ok) throw new Error("Failed to update");
+      setReceiptPrinting(newValue);
+      setSaveMessage({ type: "success", text: "Receipt printing setting updated!" });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
     } finally {
-      setCurrencySaving(false);
+      setConfigSaving(false);
     }
   };
 
-  const handleRateChange = (code: string, value: string) => {
-    const num = parseFloat(value);
-    if (!isNaN(num) && num > 0) {
-      setCurrencyRates((prev) => ({ ...prev, [code]: num }));
+  const handleCardDisabledToggle = async () => {
+    setConfigSaving(true);
+    const newValue = !cardDisabled;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ card_button_disabled: String(newValue) }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      setCardDisabled(newValue);
+      setSaveMessage({ type: "success", text: "Card button setting updated!" });
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (err: any) {
+      setSaveMessage({ type: "error", text: err.message });
+    } finally {
+      setConfigSaving(false);
     }
   };
 
@@ -265,7 +216,6 @@ export default function SettingsPage() {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onloadend = () => {
       const img = new Image();
@@ -274,13 +224,11 @@ export default function SettingsPage() {
         const MAX_SIZE = 256;
         let w = img.width;
         let h = img.height;
-
         if (w > h) {
           if (w > MAX_SIZE) { h = Math.round((h * MAX_SIZE) / w); w = MAX_SIZE; }
         } else {
           if (h > MAX_SIZE) { w = Math.round((w * MAX_SIZE) / h); h = MAX_SIZE; }
         }
-
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext("2d");
@@ -301,7 +249,6 @@ export default function SettingsPage() {
     if (!auth?.username) return;
     setSaving(true);
     setSaveMessage(null);
-
     try {
       const res = await fetch(`/api/profile?username=${encodeURIComponent(auth.username)}`, {
         method: "PUT",
@@ -317,12 +264,10 @@ export default function SettingsPage() {
           social_instagram: profile.social_instagram || null,
         }),
       });
-
       if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.detail || "Failed to save profile");
       }
-
       setSaveMessage({ type: "success", text: "Profile saved successfully!" });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
@@ -332,7 +277,7 @@ export default function SettingsPage() {
     }
   };
 
-  const canManageSettings = auth?.role === "admin" || auth?.role === "manager";
+  const canManageSettings = auth?.role === "admin" || auth?.role === "manager1";
 
   return (
     <div className="space-y-6 pb-12">
@@ -369,48 +314,160 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Currency Settings */}
+      {/* System Configuration - admin and manager1 only */}
       {canManageSettings && (
         <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">Currency</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Select the display currency and edit exchange rates (1 USD = X foreign currency)</p>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">System Configuration</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Configure system-wide settings</p>
 
-          <div className="flex items-center gap-3 mb-6">
-            <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c.code} value={c.symbol}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={handleCurrencySave}
-              disabled={currencySaving}
-              className="rounded-xl bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-all disabled:opacity-50 shadow-sm"
-            >
-              {currencySaving ? "Saving..." : "Save"}
-            </button>
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Receipt Printing on Cashout</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Automatically print receipt when checkout completes</p>
+              </div>
+              <button
+                onClick={handleReceiptPrintingToggle}
+                disabled={configSaving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  receiptPrinting ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
+                    receiptPrinting ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Exchange Rates (1 USD =)</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-64 overflow-y-auto">
-            {CURRENCIES.map((c) => (
-              <div key={c.code} className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 w-8 shrink-0">{c.code}</span>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={currencyRates[c.code] ?? ""}
-                  onChange={(e) => handleRateChange(c.code, e.target.value)}
-                  className="w-full rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-slate-900 dark:text-white focus:border-indigo-400 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-400 dark:focus:ring-sky-900 outline-none"
-                />
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Disable Card Button on Checkout</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Hide the Card payment button from the sales terminal</p>
               </div>
-            ))}
+              <button
+                onClick={handleCardDisabledToggle}
+                disabled={configSaving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  cardDisabled ? "bg-rose-500" : "bg-slate-300 dark:bg-slate-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
+                    cardDisabled ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {saveMessage && (
+            <div className={`mt-4 p-3 rounded-lg text-sm font-medium ${
+              saveMessage.type === "success"
+                ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800"
+            }`}>
+              {saveMessage.type === "success" ? "✓" : "✗"} {saveMessage.text}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Database Management - admin only */}
+      {auth?.role === "admin" && (
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">Database Management</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Export, import, or backup your store database</p>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            {/* Export Database */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="h-10 w-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                  <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Export Database</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Download .db file</p>
+                </div>
+              </div>
+              <button
+                onClick={() => window.open("/api/admin/export-db", "_blank")}
+                className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-95 transition-all"
+              >
+                Export
+              </button>
+            </div>
+
+            {/* Import Database */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="h-10 w-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                  <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Import Database</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Upload .db file</p>
+                </div>
+              </div>
+              <label className="block w-full rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 active:scale-95 transition-all text-center cursor-pointer">
+                Import
+                <input
+                  type="file"
+                  accept=".db"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (!confirm("Importing a database will replace the current one. A backup will be created automatically. Continue?")) {
+                      e.target.value = "";
+                      return;
+                    }
+                    const formData = new FormData();
+                    formData.append("file", file);
+                    try {
+                      const res = await fetch("/api/admin/import-db", { method: "POST", body: formData });
+                      if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Import failed");
+                      }
+                      alert("Database imported successfully! Please restart the server.");
+                    } catch (err: any) {
+                      alert("Import failed: " + err.message);
+                    }
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
+
+            {/* Backup Database */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                  <svg className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Backup Database</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Timestamped backup</p>
+                </div>
+              </div>
+              <button
+                onClick={() => window.open("/api/admin/backup-db", "_blank")}
+                className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 active:scale-95 transition-all"
+              >
+                Backup
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -580,7 +637,6 @@ export default function SettingsPage() {
                     {profile.full_name ? profile.full_name[0] : profile.username[0]}
                   </div>
                 )}
-                {/* Hover overlay */}
                 <label className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                   <span className="text-white text-xs font-semibold">Change</span>
                   <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
@@ -595,10 +651,7 @@ export default function SettingsPage() {
                     <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                   </label>
                   {profile.profile_image && (
-                    <button
-                      onClick={handleRemoveImage}
-                      className="text-xs font-semibold text-rose-500 hover:underline"
-                    >
+                    <button onClick={handleRemoveImage} className="text-xs font-semibold text-rose-500 hover:underline">
                       Remove
                     </button>
                   )}
@@ -606,7 +659,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Profile Form Fields */}
             <div className="grid gap-5 md:grid-cols-2">
               <div>
                 <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Full Name</label>
@@ -640,54 +692,28 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Social Links */}
             <div>
               <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-3">Social Profiles</h3>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
                   <span className="text-lg">🐦</span>
-                  <input
-                    type="text"
-                    value={profile.social_twitter}
-                    onChange={(e) => setProfile({ ...profile, social_twitter: e.target.value })}
-                    placeholder="Twitter profile URL"
-                    className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none"
-                  />
+                  <input type="text" value={profile.social_twitter} onChange={(e) => setProfile({ ...profile, social_twitter: e.target.value })} placeholder="Twitter profile URL" className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
                 </div>
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
                   <span className="text-lg">📘</span>
-                  <input
-                    type="text"
-                    value={profile.social_facebook}
-                    onChange={(e) => setProfile({ ...profile, social_facebook: e.target.value })}
-                    placeholder="Facebook profile URL"
-                    className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none"
-                  />
+                  <input type="text" value={profile.social_facebook} onChange={(e) => setProfile({ ...profile, social_facebook: e.target.value })} placeholder="Facebook profile URL" className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
                 </div>
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
                   <span className="text-lg">🔗</span>
-                  <input
-                    type="text"
-                    value={profile.social_linkedin}
-                    onChange={(e) => setProfile({ ...profile, social_linkedin: e.target.value })}
-                    placeholder="LinkedIn profile URL"
-                    className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none"
-                  />
+                  <input type="text" value={profile.social_linkedin} onChange={(e) => setProfile({ ...profile, social_linkedin: e.target.value })} placeholder="LinkedIn profile URL" className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
                 </div>
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
                   <span className="text-lg">📷</span>
-                  <input
-                    type="text"
-                    value={profile.social_instagram}
-                    onChange={(e) => setProfile({ ...profile, social_instagram: e.target.value })}
-                    placeholder="Instagram profile URL"
-                    className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none"
-                  />
+                  <input type="text" value={profile.social_instagram} onChange={(e) => setProfile({ ...profile, social_instagram: e.target.value })} placeholder="Instagram profile URL" className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
                 </div>
               </div>
             </div>
 
-            {/* Save Button & Status */}
             <div className="flex items-center gap-4 pt-2">
               <button
                 onClick={handleSave}
@@ -696,12 +722,9 @@ export default function SettingsPage() {
               >
                 {saving ? "Saving..." : "Save Profile"}
               </button>
-
               {saveMessage && (
                 <p className={`text-sm font-medium ${
-                  saveMessage.type === "success"
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-rose-600 dark:text-rose-400"
+                  saveMessage.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
                 }`}>
                   {saveMessage.type === "success" ? "✓" : "✗"} {saveMessage.text}
                 </p>
@@ -711,7 +734,6 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Account Info */}
       <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-6">
         <h3 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Account Information</h3>
         <p className="text-sm text-slate-500 dark:text-slate-400">
