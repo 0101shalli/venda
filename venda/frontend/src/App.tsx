@@ -13,9 +13,10 @@ import OrdersPage from "./pages/OrdersPage";
 import ChangePasswordModal from "./components/ChangePasswordModal";
 import { fetchWithAuthInterceptors, getAuth, setAuth, clearAuth, AuthData } from "./services/auth";
 
-const routePermissions = {
+const routePermissions: Record<string, string[]> = {
   cashier: ["/sales", "/orders", "/settings"],
-  manager: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings"],
+  manager1: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings"],
+  manager2: ["/sales", "/orders", "/inventory", "/analytics", "/settings"],
   admin: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings"],
 };
 
@@ -31,11 +32,11 @@ function App() {
       navigate("/sales", { replace: true });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount — modal cleanup updates localStorage directly
+  }, []);
 
   const allowedRoutes = useMemo(() => {
     if (!auth || !auth.role) return [];
-    return routePermissions[auth.role as keyof typeof routePermissions] ?? [];
+    return routePermissions[auth.role] ?? [];
   }, [auth]);
 
   const handleLogin = (data: AuthData) => {

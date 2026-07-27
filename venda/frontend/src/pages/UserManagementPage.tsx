@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getAuth } from "../services/auth";
 
 interface User {
   id: number;
@@ -13,14 +14,19 @@ interface User {
   social_facebook: string;
   social_linkedin: string;
   social_instagram: string;
+  disabled: boolean;
 }
 
+const VALID_ROLES = ["cashier", "manager1", "manager2", "admin"] as const;
+
 export default function UserManagementPage() {
+  const auth = getAuth();
+  const isAdmin = auth?.role === "admin";
+
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Modals state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({
@@ -36,11 +42,13 @@ export default function UserManagementPage() {
     social_linkedin: "",
     social_instagram: "",
   });
+  const [currencyOnCreate, setCurrencyOnCreate] = useState("XAF");
 
   const [passwordResetOpen, setPasswordResetOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [resettingUser, setResettingUser] = useState<User | null>(null);
   const [saving, setSaving] = useState(false);
+  const [disableAll, setDisableAll] = useState(false);
 
   const fetchUsers = () => {
     setLoading(true);
@@ -63,6 +71,8 @@ export default function UserManagementPage() {
     fetchUsers();
   }, []);
 
+  const visibleUsers = isAdmin ? users : users.filter((u) => u.role !== "admin");
+
   const openAddModal = () => {
     setEditingUser(null);
     setFormData({
@@ -78,6 +88,7 @@ export default function UserManagementPage() {
       social_linkedin: "",
       social_instagram: "",
     });
+    setCurrencyOnCreate("XAF");
     setIsModalOpen(true);
   };
 
@@ -124,18 +135,34 @@ export default function UserManagementPage() {
       alert("Password is required for new users");
       return;
     }
+    if (!isEdit && !VALID_ROLES.includes(formData.role as any)) {
+      alert("Invalid role selected");
+      return;
+    }
 
     setSaving(true);
     try {
+      const payload: any = { ...formData };
+      if (isEdit) {
+        delete payload.password;
+      }
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         const errData = await res.json();
         throw new Error(errData.detail || "Request failed");
+      }
+
+      if (!isEdit && formData.role === "manager1" && currencyOnCreate) {
+        await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currency: currencyOnCreate }),
+        });
       }
 
       setIsModalOpen(false);
@@ -158,6 +185,42 @@ export default function UserManagementPage() {
       fetchUsers();
     } catch (err: any) {
       alert(err.message);
+    }
+  };
+
+  const handleToggleDisable = async (user: User) => {
+    const newDisabled = !user.disabled;
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disabled: newDisabled }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Failed to update user");
+      }
+      fetchUsers();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleDisableAll = async () => {
+    const action = disableAll ? "enable" : "disable";
+    if (!confirm(`Are you sure you want to ${action} all non-admin users?`)) return;
+    try {
+      const nonAdminUsers = users.filter((u) => u.role !== "admin");
+      for (const u of nonAdminUsers) {
+        await fetch(`/api/users/${u.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ disabled: !disableAll }),
+        });
+      }
+      fetchUsers();
+    } catch (err: any) {
+      alert("Failed to update users");
     }
   };
 
@@ -193,10 +256,20 @@ export default function UserManagementPage() {
     switch (role) {
       case "admin":
         return "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400";
-      case "manager":
+      case "manager1":
         return "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400";
+      case "manager2":
+        return "bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400";
       default:
         return "bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400";
+    }
+  };
+
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case "manager1": return "Manager 1";
+      case "manager2": return "Manager 2";
+      default: return role.charAt(0).toUpperCase() + role.slice(1);
     }
   };
 
@@ -208,12 +281,24 @@ export default function UserManagementPage() {
           <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">User Management</h2>
           <p className="mt-1 text-slate-500 dark:text-slate-400">Add, edit, or configure store user profiles and roles.</p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="rounded-xl bg-indigo-600 dark:bg-sky-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform shadow-sm"
-        >
-          + Add New User
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleDisableAll}
+            className={`rounded-xl px-4 py-2.5 text-sm font-semibold active:scale-95 transition-transform shadow-sm ${
+              disableAll
+                ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                : "bg-rose-600 text-white hover:bg-rose-700"
+            }`}
+          >
+            {disableAll ? "✓ Enable All" : "⊘ Disable All"}
+          </button>
+          <button
+            onClick={openAddModal}
+            className="rounded-xl bg-indigo-600 dark:bg-sky-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform shadow-sm"
+          >
+            + Add New User
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -224,17 +309,21 @@ export default function UserManagementPage() {
         <div className="rounded-2xl bg-red-50 dark:bg-red-950/20 p-6 text-red-500 dark:text-red-400 text-center border border-red-200 dark:border-red-950">
           Error: {error}
         </div>
-      ) : users.length === 0 ? (
+      ) : visibleUsers.length === 0 ? (
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-12 text-center border border-slate-200 dark:border-slate-800">
           <div className="text-5xl mb-4">👥</div>
           <p className="text-slate-500 dark:text-slate-400 text-lg font-medium">No users found. Create the first user to get started.</p>
         </div>
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {users.map((user) => (
+          {visibleUsers.map((user) => (
             <div
               key={user.id}
-              className="group rounded-3xl bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between"
+              className={`group rounded-3xl bg-white dark:bg-slate-900 p-6 border shadow-sm hover:shadow-md transition-all flex flex-col justify-between ${
+                user.disabled
+                  ? "border-slate-300 dark:border-slate-700 opacity-60"
+                  : "border-slate-200 dark:border-slate-800"
+              }`}
             >
               <div>
                 <div className="flex items-center gap-4 mb-4">
@@ -248,9 +337,16 @@ export default function UserManagementPage() {
                   <div className="min-w-0">
                     <h4 className="font-bold text-slate-800 dark:text-slate-100 truncate">{user.full_name || user.username}</h4>
                     <p className="text-xs text-slate-400 dark:text-slate-500">@{user.username}</p>
-                    <span className={`inline-block mt-1 text-[10px] uppercase font-bold tracking-wide rounded-full px-2.5 py-0.5 ${getRoleBadgeStyle(user.role)}`}>
-                      {user.role}
-                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`inline-block text-[10px] uppercase font-bold tracking-wide rounded-full px-2.5 py-0.5 ${getRoleBadgeStyle(user.role)}`}>
+                        {getRoleLabel(user.role)}
+                      </span>
+                      {user.disabled && (
+                        <span className="inline-block text-[10px] uppercase font-bold tracking-wide rounded-full px-2.5 py-0.5 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
+                          Disabled
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -263,7 +359,6 @@ export default function UserManagementPage() {
                     <p className="text-xs italic text-slate-500 dark:text-slate-400 line-clamp-2">{user.bio}</p>
                   )}
 
-                  {/* Social links */}
                   {(user.social_twitter || user.social_facebook || user.social_linkedin || user.social_instagram) && (
                     <div className="flex gap-3 pt-1 text-xs text-slate-400">
                       {user.social_twitter && (
@@ -297,20 +392,35 @@ export default function UserManagementPage() {
                 >
                   🔑
                 </button>
-                <button
-                  onClick={() => handleDelete(user.id)}
-                  className="px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 rounded-xl active:scale-95 transition-all"
-                  title="Delete user"
-                >
-                  🗑️
-                </button>
+                {user.username !== "admin" && (
+                  <button
+                    onClick={() => handleToggleDisable(user)}
+                    className={`px-3 py-2 text-xs font-semibold rounded-xl active:scale-95 transition-all ${
+                      user.disabled
+                        ? "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40"
+                        : "text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40"
+                    }`}
+                    title={user.disabled ? "Enable user" : "Disable user"}
+                  >
+                    {user.disabled ? "✓" : "⊘"}
+                  </button>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={() => handleDelete(user.id)}
+                    className="px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40 rounded-xl active:scale-95 transition-all"
+                    title="Delete user"
+                  >
+                    🗑️
+                  </button>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* ── Add / Edit Modal ── */}
+      {/* Add / Edit Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
@@ -325,7 +435,6 @@ export default function UserManagementPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Avatar upload */}
               <div className="flex flex-col items-center gap-3">
                 {formData.profile_image ? (
                   <img src={formData.profile_image} className="h-20 w-20 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700 shadow-sm" alt="avatar" />
@@ -340,7 +449,6 @@ export default function UserManagementPage() {
                 </label>
               </div>
 
-              {/* Core fields */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Username *</label>
@@ -372,11 +480,28 @@ export default function UserManagementPage() {
                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                     className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                   >
+                    {isAdmin && <option value="admin">Admin</option>}
+                    <option value="manager1">Manager 1</option>
+                    <option value="manager2">Manager 2</option>
                     <option value="cashier">Cashier</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Administrator</option>
                   </select>
                 </div>
+                {!editingUser && formData.role === "manager1" && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">System Currency</label>
+                    <select
+                      value={currencyOnCreate}
+                      onChange={(e) => setCurrencyOnCreate(e.target.value)}
+                      className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+                    >
+                      <option value="XAF">XAF - Central African Franc</option>
+                      <option value="$">$ - US Dollar</option>
+                      <option value="€">€ - Euro</option>
+                      <option value="£">£ - British Pound</option>
+                      <option value="NGN">₦ - Nigerian Naira</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -409,7 +534,6 @@ export default function UserManagementPage() {
                 />
               </div>
 
-              {/* Social links */}
               <div>
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-2">Social Profiles</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -477,7 +601,7 @@ export default function UserManagementPage() {
         </div>
       )}
 
-      {/* ── Password Reset Modal ── */}
+      {/* Password Reset Modal */}
       {passwordResetOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setPasswordResetOpen(false)} />

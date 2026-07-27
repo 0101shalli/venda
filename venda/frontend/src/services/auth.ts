@@ -1,6 +1,6 @@
 export interface AuthData {
   username: string;
-  role: "admin" | "manager" | "cashier";
+  role: "admin" | "manager1" | "manager2" | "cashier";
   is_first_login: boolean;
 }
 
