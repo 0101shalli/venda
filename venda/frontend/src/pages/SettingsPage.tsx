@@ -46,6 +46,10 @@ export default function SettingsPage() {
 
   const [barcodeScannerDisabled, setBarcodeScannerDisabled] = useState(false);
 
+  const [printerType, setPrinterType] = useState("file");
+  const [printerDevice, setPrinterDevice] = useState("");
+  const [printerSaving, setPrinterSaving] = useState(false);
+
   const [defaultProfit, setDefaultProfit] = useState(0);
   const [profitSaving, setProfitSaving] = useState(false);
   const [profitSearchQuery, setProfitSearchQuery] = useState("");
@@ -89,6 +93,8 @@ export default function SettingsPage() {
         setReceiptPrinting(data.receipt_printing === "true");
         setCardDisabled(data.card_button_disabled === "true");
         setBarcodeScannerDisabled(data.barcode_scanner_disabled === "true");
+        setPrinterType(data.printer_type || "file");
+        setPrinterDevice(data.printer_device || "");
       })
       .catch(() => {});
 
@@ -403,6 +409,71 @@ export default function SettingsPage() {
                     barcodeScannerDisabled ? "translate-x-7" : "translate-x-1"
                   }`}
                 />
+              </button>
+            </div>
+          </div>
+
+          {/* Printer Configuration */}
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Receipt Printer Configuration</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Printer Type</label>
+                <select
+                  value={printerType}
+                  onChange={(e) => setPrinterType(e.target.value)}
+                  className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+                >
+                  <option value="file">File / Device (USB001, /dev/usb/lp0)</option>
+                  <option value="network">Network (host:port)</option>
+                  <option value="usb">USB (vid:pid)</option>
+                  <option value="serial">Serial (port:baud)</option>
+                  <option value="dummy">Dummy (testing only, no print)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Printer Device</label>
+                <input
+                  type="text"
+                  value={printerDevice}
+                  onChange={(e) => setPrinterDevice(e.target.value)}
+                  placeholder={
+                    printerType === "network"
+                      ? "e.g. 192.168.1.20:9100"
+                      : printerType === "usb"
+                      ? "e.g. 04b8:0202"
+                      : printerType === "serial"
+                      ? "e.g. /dev/ttyUSB0:9600"
+                      : "e.g. USB001 or /dev/usb/lp0"
+                  }
+                  className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+                />
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  Leave empty to use the system default.
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  setPrinterSaving(true);
+                  try {
+                    const res = await fetch("/api/settings", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ printer_type: printerType, printer_device: printerDevice }),
+                    });
+                    if (!res.ok) throw new Error("Failed to save printer settings");
+                    setSaveMessage({ type: "success", text: "Printer configuration saved!" });
+                    setTimeout(() => setSaveMessage(null), 3000);
+                  } catch (err: any) {
+                    setSaveMessage({ type: "error", text: err.message });
+                  } finally {
+                    setPrinterSaving(false);
+                  }
+                }}
+                disabled={printerSaving}
+                className="rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {printerSaving ? "Saving..." : "Save Printer Config"}
               </button>
             </div>
           </div>

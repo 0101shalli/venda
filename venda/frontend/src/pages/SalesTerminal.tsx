@@ -167,6 +167,12 @@ export default function SalesTerminal() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  const showToast = (type: "success" | "error", message: string) => {
+    setToast({ type, message });
+    window.setTimeout(() => setToast(null), 5000);
+  };
   const [cardDisabled, setCardDisabled] = useState(false);
   const [barcodeScannerDisabled, setBarcodeScannerDisabled] = useState(false);
   const [hasManager1, setHasManager1] = useState<boolean | null>(null);
@@ -240,8 +246,16 @@ export default function SalesTerminal() {
         throw new Error(errorData.detail || "Checkout failed");
       }
 
+      const data = await response.json();
       setCheckoutStatus("success");
       setCart([]);
+
+      if (data.receipt_printed === true) {
+        showToast("success", `Receipt printed successfully (${data.invoice_number})`);
+      } else if (data.receipt_printed === false) {
+        showToast("error", `Receipt not printed: ${data.receipt_error || "printer not connected or unavailable"}`);
+      }
+
       setTimeout(() => setCheckoutStatus("idle"), 3000);
     } catch (err: any) {
       setCheckoutStatus("error");
@@ -279,6 +293,31 @@ export default function SalesTerminal() {
 
   return (
     <div className="flex h-full min-h-screen flex-col gap-4 p-1 lg:flex-row lg:gap-6">
+
+      {/* Print status toast */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-[100] flex items-center gap-3 rounded-2xl px-5 py-4 shadow-xl border max-w-sm animate-[slideIn_0.3s_ease-out]"
+          style={{
+            backgroundColor: toast.type === "success" ? "var(--color-card)" : "var(--color-card)",
+            borderColor: toast.type === "success" ? "#10B981" : "#F43F5E",
+            color: "var(--color-text)",
+          }}
+        >
+          <span className="text-2xl">{toast.type === "success" ? "✅" : "❌"}</span>
+          <div>
+            <p className={`text-sm font-bold ${toast.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+              {toast.type === "success" ? "Receipt Printed" : "Print Failed"}
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>{toast.message}</p>
+          </div>
+          <button
+            onClick={() => setToast(null)}
+            className="ml-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
 
       {/* LEFT COLUMN: Search + Barcode */}
       <div className="flex flex-col gap-4 lg:w-[55%]">
