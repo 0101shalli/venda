@@ -623,6 +623,7 @@ def get_sales():
 def create_sale(body: dict):
     payment_method = body.get("payment_method", "Cash")
     items = body.get("items", [])
+    cashier_username = body.get("cashier_username", "")
 
     if not items:
         raise HTTPException(status_code=400, detail="No items in the sale")
@@ -630,6 +631,14 @@ def create_sale(body: dict):
     receipt_text = None
 
     with get_session() as session:
+        # Find the actual cashier
+        cashier = None
+        if cashier_username:
+            cashier = session.exec(select(User).where(User.username == cashier_username)).first()
+        if not cashier:
+            cashier = session.exec(select(User)).first()
+        cashier_id = cashier.id if cashier else 1
+
         total = 0.0
         sale_items = []
         item_details = []
@@ -648,17 +657,15 @@ def create_sale(body: dict):
             item_details.append({"name": product.name, "qty": qty, "price": product.selling_price, "line_total": line_total})
 
             # Record inventory transaction
-            user = session.exec(select(User)).first()
             txn = InventoryTransaction(
                 product_id=product.id,
                 quantity_changed=-qty,
                 type="sale",
-                user_id=user.id if user else 1,
+                user_id=cashier_id,
             )
             session.add(txn)
 
         invoice = f"INV-{int(datetime.utcnow().timestamp() * 1000)}"
-        user = session.exec(select(User)).first()
         currency = _get_setting(session, "currency") or "XAF"
         receipt_printing = _get_setting(session, "receipt_printing") or "false"
         printer_type = _get_setting(session, "printer_type") or "file"
@@ -667,7 +674,7 @@ def create_sale(body: dict):
             invoice_number=invoice,
             total_amount=total,
             payment_method=payment_method,
-            cashier_id=user.id if user else 1,
+            cashier_id=cashier_id,
         )
         session.add(sale)
         session.commit()
@@ -685,7 +692,7 @@ def create_sale(body: dict):
             lines.append("=" * 32)
             lines.append(f"Invoice: {invoice}")
             lines.append(f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}")
-            lines.append(f"Cashier: {user.username if user else 'N/A'}")
+            lines.append(f"Cashier: {cashier.username if cashier else 'N/A'}")
             lines.append(f"Payment: {payment_method}")
             lines.append("-" * 32)
             for d in item_details:

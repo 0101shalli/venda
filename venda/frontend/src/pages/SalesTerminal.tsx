@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import BarcodeScanner, { ProductInfo } from "../components/BarcodeScanner";
 import { useCurrency } from "../context/CurrencyContext";
+import { getAuth } from "../services/auth";
 
 type CartItem = ProductInfo & { quantity: number };
 
@@ -227,6 +228,7 @@ export default function SalesTerminal() {
     setCheckoutStatus("loading");
     setErrorMessage(null);
     try {
+      const auth = getAuth();
       const response = await fetch("/api/sales", {
         method: "POST",
         headers: {
@@ -234,6 +236,7 @@ export default function SalesTerminal() {
         },
         body: JSON.stringify({
           payment_method: paymentMethod,
+          cashier_username: auth?.username || "",
           items: cart.map((item) => ({
             product_id: item.id,
             quantity: item.quantity,
