@@ -22,11 +22,11 @@ from sqlmodel import select, text
 try:
     from .database import create_db_and_tables, get_session, engine
     from .models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
-    from .utils import send_receipt_to_printer
+    from .utils import print_receipt_with_timeout
 except (ImportError, SystemError):
     from database import create_db_and_tables, get_session, engine
     from models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
-    from utils import send_receipt_to_printer
+    from utils import print_receipt_with_timeout
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -632,6 +632,8 @@ def create_sale(body: dict):
         user = session.exec(select(User)).first()
         currency = _get_setting(session, "currency") or "XAF"
         receipt_printing = _get_setting(session, "receipt_printing") or "false"
+        printer_type = _get_setting(session, "printer_type") or "file"
+        printer_device = _get_setting(session, "printer_device") or ""
         sale = Sale(
             invoice_number=invoice,
             total_amount=total,
@@ -667,12 +669,18 @@ def create_sale(body: dict):
             lines.append("=" * 32)
             receipt_text = "\n".join(lines)
 
+        print_status = None
         if receipt_text:
-            def _print():
-                send_receipt_to_printer(receipt_text)
-            threading.Thread(target=_print, daemon=True).start()
+            print_status = print_receipt_with_timeout(receipt_text, printer_type, printer_device)
 
-        return {"id": sale.id, "invoice_number": invoice, "total_amount": total, "message": "Sale completed"}
+        return {
+            "id": sale.id,
+            "invoice_number": invoice,
+            "total_amount": total,
+            "message": "Sale completed",
+            "receipt_printed": (print_status or {}).get("success") if print_status else None,
+            "receipt_error": (print_status or {}).get("error") if print_status else None,
+        }
 
 
 # ---------------------------------------------------------------------------
