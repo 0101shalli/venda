@@ -16,7 +16,7 @@ import { fetchWithAuthInterceptors, getAuth, setAuth, clearAuth, AuthData } from
 const routePermissions: Record<string, string[]> = {
   cashier: ["/sales", "/orders", "/settings"],
   manager1: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings"],
-  manager2: ["/sales", "/orders", "/inventory", "/analytics", "/settings"],
+  manager2: ["/sales", "/orders", "/analytics", "/settings"],
   admin: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings"],
 };
 
