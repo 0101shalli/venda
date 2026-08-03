@@ -168,6 +168,7 @@ export default function SalesTerminal() {
   const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [cardDisabled, setCardDisabled] = useState(false);
+  const [barcodeScannerDisabled, setBarcodeScannerDisabled] = useState(false);
   const [hasManager1, setHasManager1] = useState<boolean | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
 
@@ -178,6 +179,7 @@ export default function SalesTerminal() {
     ])
       .then(([settings, managerCheck]) => {
         setCardDisabled(settings.card_button_disabled === "true");
+        setBarcodeScannerDisabled(settings.barcode_scanner_disabled === "true");
         setHasManager1(managerCheck.exists);
       })
       .catch(() => {
@@ -293,12 +295,14 @@ export default function SalesTerminal() {
           <SearchBar onSelect={addToCart} />
         </div>
 
-        <div className="rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-sm border border-slate-200 dark:border-slate-700">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-            📷 Barcode Scanner
-          </h2>
-          <BarcodeScanner onProductScanned={addToCart} />
-        </div>
+        {!barcodeScannerDisabled && (
+          <div className="rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-sm border border-slate-200 dark:border-slate-700">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+              📷 Barcode Scanner
+            </h2>
+            <BarcodeScanner onProductScanned={addToCart} />
+          </div>
+        )}
       </div>
 
       {/* RIGHT COLUMN: Checkout */}

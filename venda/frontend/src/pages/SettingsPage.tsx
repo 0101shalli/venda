@@ -44,6 +44,8 @@ export default function SettingsPage() {
   const [cardDisabled, setCardDisabled] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
 
+  const [barcodeScannerDisabled, setBarcodeScannerDisabled] = useState(false);
+
   const [defaultProfit, setDefaultProfit] = useState(0);
   const [profitSaving, setProfitSaving] = useState(false);
   const [profitSearchQuery, setProfitSearchQuery] = useState("");
@@ -86,6 +88,7 @@ export default function SettingsPage() {
       .then((data) => {
         setReceiptPrinting(data.receipt_printing === "true");
         setCardDisabled(data.card_button_disabled === "true");
+        setBarcodeScannerDisabled(data.barcode_scanner_disabled === "true");
       })
       .catch(() => {});
 
@@ -358,6 +361,46 @@ export default function SettingsPage() {
                 <span
                   className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
                     cardDisabled ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Disable Barcode Scanner on Sales Page</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Hide the barcode scanner tile from the sales terminal</p>
+              </div>
+              <button
+                onClick={async () => {
+                  setConfigSaving(true);
+                  const newValue = !barcodeScannerDisabled;
+                  try {
+                    const res = await fetch("/api/settings", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ barcode_scanner_disabled: String(newValue) }),
+                    });
+                    if (!res.ok) throw new Error("Failed to update");
+                    setBarcodeScannerDisabled(newValue);
+                    setSaveMessage({ type: "success", text: "Barcode scanner setting updated!" });
+                    setTimeout(() => setSaveMessage(null), 3000);
+                  } catch (err: any) {
+                    setSaveMessage({ type: "error", text: err.message });
+                  } finally {
+                    setConfigSaving(false);
+                  }
+                }}
+                disabled={configSaving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  barcodeScannerDisabled ? "bg-rose-500" : "bg-slate-300 dark:bg-slate-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
+                    barcodeScannerDisabled ? "translate-x-7" : "translate-x-1"
                   }`}
                 />
               </button>
