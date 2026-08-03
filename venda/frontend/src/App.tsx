@@ -50,6 +50,11 @@ function App() {
   };
 
   const handleLogout = () => {
+    fetch("/api/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: auth?.session_id }),
+    }).catch(() => {});
     clearAuth();
     setAuthState(null);
     navigate("/login");

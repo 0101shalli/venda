@@ -21,11 +21,11 @@ from sqlmodel import select, text
 
 try:
     from .database import create_db_and_tables, get_session, engine
-    from .models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting
+    from .models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
     from .utils import send_receipt_to_printer
 except (ImportError, SystemError):
     from database import create_db_and_tables, get_session, engine
-    from models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting
+    from models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
     from utils import send_receipt_to_printer
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -57,6 +57,7 @@ class LoginResponse(BaseModel):
     username: str
     role: str
     is_first_login: bool
+    session_id: int | None = None
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -167,7 +168,13 @@ def login(request: LoginRequest, response: Response):
             response.status_code = 403
             return {"username": user.username, "role": user.role, "is_first_login": True}
 
-        return {"username": user.username, "role": user.role, "is_first_login": False}
+        # Create user session for time tracking
+        user_session = UserSession(user_id=user.id, username=user.username)
+        session.add(user_session)
+        session.commit()
+        session.refresh(user_session)
+
+        return {"username": user.username, "role": user.role, "is_first_login": False, "session_id": user_session.id}
 
 
 @app.get("/api/analytics")
@@ -241,6 +248,58 @@ def analytics_detailed():
 
 class ChangePasswordRequest(BaseModel):
     password: str
+
+
+@app.post("/api/logout")
+def logout(body: dict):
+    session_id = body.get("session_id")
+    if session_id:
+        with get_session() as db_session:
+            user_session = db_session.get(UserSession, session_id)
+            if user_session and not user_session.logout_time:
+                user_session.logout_time = datetime.utcnow()
+                if user_session.login_time:
+                    delta = (user_session.logout_time - user_session.login_time).total_seconds()
+                    user_session.duration_seconds = round(delta, 2)
+                db_session.add(user_session)
+                db_session.commit()
+    return {"message": "Logged out"}
+
+
+@app.get("/api/sessions")
+def get_all_sessions():
+    with get_session() as db:
+        records = db.exec(select(UserSession).order_by(UserSession.login_time.desc())).all()
+        return [
+            {
+                "id": s.id,
+                "user_id": s.user_id,
+                "username": s.username,
+                "login_time": s.login_time.isoformat() if s.login_time else None,
+                "logout_time": s.logout_time.isoformat() if s.logout_time else None,
+                "duration_seconds": s.duration_seconds,
+            }
+            for s in records
+        ]
+
+
+@app.get("/api/sessions/user/{user_id}")
+def get_user_sessions(user_id: int):
+    with get_session() as db:
+        records = db.exec(
+            select(UserSession).where(UserSession.user_id == user_id).order_by(UserSession.login_time.desc())
+        ).all()
+        return [
+            {
+                "id": s.id,
+                "user_id": s.user_id,
+                "username": s.username,
+                "login_time": s.login_time.isoformat() if s.login_time else None,
+                "logout_time": s.logout_time.isoformat() if s.logout_time else None,
+                "duration_seconds": s.duration_seconds,
+            }
+            for s in records
+        ]
 
 
 @app.post("/api/change-password")

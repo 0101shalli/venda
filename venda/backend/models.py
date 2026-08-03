@@ -88,3 +88,12 @@ class SystemSetting(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     key: str = Field(index=True, unique=True)
     value: str
+
+
+class UserSession(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id")
+    username: str
+    login_time: datetime = Field(default_factory=datetime.utcnow)
+    logout_time: Optional[datetime] = None
+    duration_seconds: Optional[float] = None

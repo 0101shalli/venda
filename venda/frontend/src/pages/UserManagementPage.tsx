@@ -643,6 +643,195 @@ export default function UserManagementPage() {
           </div>
         </div>
       )}
+
+      {/* Time Tracking Section */}
+      {(auth?.role === "admin" || auth?.role === "manager1") && (
+        <TimeTracking users={users} />
+      )}
+    </div>
+  );
+}
+
+interface SessionRecord {
+  id: number;
+  user_id: number;
+  username: string;
+  login_time: string | null;
+  logout_time: string | null;
+  duration_seconds: number | null;
+}
+
+function TimeTracking({ users }: { users: User[] }) {
+  const [selectedUserId, setSelectedUserId] = useState<number | "">("");
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+
+  const fetchSessions = (userId: number) => {
+    setLoadingSessions(true);
+    fetch(`/api/sessions/user/${userId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setSessions(data);
+        setLoadingSessions(false);
+      })
+      .catch(() => setLoadingSessions(false));
+  };
+
+  const handleUserChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setSelectedUserId(val === "" ? "" : Number(val));
+    if (val) {
+      fetchSessions(Number(val));
+    } else {
+      setSessions([]);
+    }
+  };
+
+  const totalSeconds = sessions.reduce(
+    (sum, s) => sum + (s.duration_seconds || 0),
+    0
+  );
+  const totalHours = Math.floor(totalSeconds / 3600);
+  const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
+
+  const formatDuration = (sec: number | null) => {
+    if (sec === null || sec === undefined) return "—";
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    return `${h}h ${m}m ${s}s`;
+  };
+
+  const formatDT = (iso: string | null) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString();
+  };
+
+  const handlePrintPDF = () => {
+    const user = users.find((u) => u.id === selectedUserId);
+    const userName = user?.full_name || user?.username || "Unknown";
+
+    const rows = sessions
+      .map(
+        (s) => `
+        <tr>
+          <td style="border:1px solid #ccc;padding:8px;text-align:center">${s.id}</td>
+          <td style="border:1px solid #ccc;padding:8px;text-align:center">${formatDT(s.login_time)}</td>
+          <td style="border:1px solid #ccc;padding:8px;text-align:center">${formatDT(s.logout_time)}</td>
+          <td style="border:1px solid #ccc;padding:8px;text-align:center">${formatDuration(s.duration_seconds)}</td>
+        </tr>`
+      )
+      .join("");
+
+    const html = `
+      <html>
+        <head><meta charset="utf-8"><title>Work Sessions - ${userName}</title>
+        <style>
+          body{font-family:Arial,sans-serif;padding:40px}
+          h1{color:#333}
+          table{width:100%;border-collapse:collapse;margin-top:20px}
+          th{background:#f5f5f5;border:1px solid #ccc;padding:10px;text-align:center}
+          td{text-align:center}
+          .total{margin-top:20px;font-weight:bold;font-size:1.1em}
+        </style></head>
+        <body>
+          <h1>Work Sessions Report</h1>
+          <p><strong>User:</strong> ${userName}</p>
+          <p><strong>Report Date:</strong> ${new Date().toLocaleString()}</p>
+          <table>
+            <thead><tr>
+              <th>#</th><th>Login Time</th><th>Logout Time</th><th>Duration</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <p class="total">Total Working Hours: ${totalHours}h ${totalMinutes}m</p>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `work_sessions_${userName.replace(/\s+/g, "_")}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">Time Tracking</h2>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">View user login sessions and working hours</p>
+
+      <div className="flex flex-wrap gap-4 items-end mb-6">
+        <div className="flex-1 min-w-[250px]">
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Select User</label>
+          <select
+            value={selectedUserId}
+            onChange={handleUserChange}
+            className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+          >
+            <option value="">— Choose a user —</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.full_name || u.username} ({u.role})
+              </option>
+            ))}
+          </select>
+        </div>
+        {sessions.length > 0 && (
+          <button
+            onClick={handlePrintPDF}
+            className="rounded-xl bg-indigo-600 dark:bg-sky-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform shadow-sm"
+          >
+            Download PDF Report
+          </button>
+        )}
+      </div>
+
+      {loadingSessions ? (
+        <div className="flex justify-center py-8">
+          <div className="h-8 w-8 animate-spin rounded-full border-3 border-slate-200 border-t-sky-500"></div>
+        </div>
+      ) : selectedUserId === "" ? (
+        <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-8">
+          Select a user to view their sessions
+        </p>
+      ) : sessions.length === 0 ? (
+        <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-8">
+          No sessions found for this user
+        </p>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                <tr className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <th className="px-4 py-3">#</th>
+                  <th className="px-4 py-3">Login Time</th>
+                  <th className="px-4 py-3">Logout Time</th>
+                  <th className="px-4 py-3">Duration</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                {sessions.map((s) => (
+                  <tr key={s.id} className="text-sm text-slate-700 dark:text-slate-300">
+                    <td className="px-4 py-3">{s.id}</td>
+                    <td className="px-4 py-3">{formatDT(s.login_time)}</td>
+                    <td className="px-4 py-3">{formatDT(s.logout_time)}</td>
+                    <td className="px-4 py-3">{formatDuration(s.duration_seconds)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 text-right">
+            <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+              Total Working Hours: {totalHours}h {totalMinutes}m
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
