@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
 type SidebarProps = {
   role: string;
+  username: string;
   onLogout: () => void;
 };
 
@@ -14,25 +16,46 @@ const menuItems = [
   { path: "/settings", label: "Settings", roles: ["cashier", "manager1", "manager2", "admin"] },
 ];
 
-export default function Sidebar({ role, onLogout }: SidebarProps) {
+export default function Sidebar({ role, username, onLogout }: SidebarProps) {
+  const [storeName, setStoreName] = useState("");
+  const [storeLogo, setStoreLogo] = useState("");
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => {
+        setStoreName(data.store_name || "");
+        setStoreLogo(data.store_logo || "");
+      })
+      .catch(() => {});
+  }, []);
+
+  const displayName = storeName || "General Store";
+
   return (
     <aside
-      className="w-72 border-r p-6 transition-colors"
+      className="w-72 border-r p-6 transition-colors flex flex-col"
       style={{
         backgroundColor: "var(--color-sidebar)",
         borderColor: "var(--color-border)",
       }}
     >
       <div className="mb-10">
+        {storeLogo && (
+          <img src={storeLogo} alt="Store logo" className="h-12 w-12 object-contain mb-2" />
+        )}
         <h1 className="text-2xl font-semibold" style={{ color: "var(--color-primary)" }}>
-          General Store
+          {displayName}
         </h1>
         <p className="mt-2 text-sm" style={{ color: "var(--color-text-muted)" }}>
+          {username}
+        </p>
+        <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>
           Role: {role}
         </p>
       </div>
 
-      <nav className="space-y-2">
+      <nav className="space-y-2 flex-1">
         {menuItems
           .filter((item) => item.roles.includes(role))
           .map((item) => (

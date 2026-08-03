@@ -83,7 +83,7 @@ function App() {
           color: var(--color-text);
         }
       `}</style>
-      <Sidebar role={auth.role} onLogout={handleLogout} />
+      <Sidebar role={auth.role} username={auth.username} onLogout={handleLogout} />
       <main className="flex-1 p-6" style={{ backgroundColor: "var(--color-bg)", color: "var(--color-text)" }}>
         {forcePasswordChange && <ChangePasswordModal onComplete={() => setForcePasswordChange(false)} />}
         <Routes>

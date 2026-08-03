@@ -50,6 +50,10 @@ export default function SettingsPage() {
   const [printerDevice, setPrinterDevice] = useState("");
   const [printerSaving, setPrinterSaving] = useState(false);
 
+  const [storeName, setStoreName] = useState("");
+  const [storeLogo, setStoreLogo] = useState("");
+  const [storeConfigSaving, setStoreConfigSaving] = useState(false);
+
   const [defaultProfit, setDefaultProfit] = useState(0);
   const [profitSaving, setProfitSaving] = useState(false);
   const [profitSearchQuery, setProfitSearchQuery] = useState("");
@@ -95,6 +99,8 @@ export default function SettingsPage() {
         setBarcodeScannerDisabled(data.barcode_scanner_disabled === "true");
         setPrinterType(data.printer_type || "file");
         setPrinterDevice(data.printer_device || "");
+        setStoreName(data.store_name || "");
+        setStoreLogo(data.store_logo || "");
       })
       .catch(() => {});
 
@@ -474,6 +480,80 @@ export default function SettingsPage() {
                 className="rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform disabled:opacity-50"
               >
                 {printerSaving ? "Saving..." : "Save Printer Config"}
+              </button>
+            </div>
+          </div>
+
+          {/* Store Name & Logo */}
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Store Branding</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Store Name</label>
+                <input
+                  type="text"
+                  value={storeName}
+                  onChange={(e) => setStoreName(e.target.value)}
+                  placeholder="General Store"
+                  className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+                />
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Leave empty to show "General Store"</p>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Store Logo</label>
+                {storeLogo && (
+                  <div className="mb-2">
+                    <img src={storeLogo} alt="Store logo" className="h-16 w-16 object-contain rounded-lg border border-slate-200 dark:border-slate-700" />
+                  </div>
+                )}
+                <label className="cursor-pointer inline-block rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform">
+                  {storeLogo ? "Change Logo" : "Upload Logo"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onloadend = () => {
+                        setStoreLogo(reader.result as string);
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+                {storeLogo && (
+                  <button
+                    onClick={() => setStoreLogo("")}
+                    className="ml-2 text-xs font-semibold text-rose-500 hover:underline"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={async () => {
+                  setStoreConfigSaving(true);
+                  try {
+                    const res = await fetch("/api/settings", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ store_name: storeName, store_logo: storeLogo }),
+                    });
+                    if (!res.ok) throw new Error("Failed to save store settings");
+                    setSaveMessage({ type: "success", text: "Store branding saved!" });
+                    setTimeout(() => setSaveMessage(null), 3000);
+                  } catch (err: any) {
+                    setSaveMessage({ type: "error", text: err.message });
+                  } finally {
+                    setStoreConfigSaving(false);
+                  }
+                }}
+                disabled={storeConfigSaving}
+                className="rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {storeConfigSaving ? "Saving..." : "Save Branding"}
               </button>
             </div>
           </div>
