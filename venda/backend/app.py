@@ -143,6 +143,11 @@ def startup_event() -> None:
             "default_profit_percentage": "0",
             "receipt_printing": "false",
             "card_button_disabled": "false",
+            "store_name": "",
+            "store_logo": "",
+            "barcode_scanner_disabled": "false",
+            "printer_type": "file",
+            "printer_device": "",
         }
         for key, value in defaults.items():
             existing = session.exec(select(SystemSetting).where(SystemSetting.key == key)).first()
@@ -329,7 +334,21 @@ def get_settings():
         currency = _get_setting(session, "currency") or "XAF"
         receipt_printing = _get_setting(session, "receipt_printing") or "false"
         card_button_disabled = _get_setting(session, "card_button_disabled") or "false"
-    return {"currency": currency, "receipt_printing": receipt_printing, "card_button_disabled": card_button_disabled}
+        store_name = _get_setting(session, "store_name") or ""
+        store_logo = _get_setting(session, "store_logo") or ""
+        barcode_scanner_disabled = _get_setting(session, "barcode_scanner_disabled") or "false"
+        printer_type = _get_setting(session, "printer_type") or "file"
+        printer_device = _get_setting(session, "printer_device") or ""
+    return {
+        "currency": currency,
+        "receipt_printing": receipt_printing,
+        "card_button_disabled": card_button_disabled,
+        "store_name": store_name,
+        "store_logo": store_logo,
+        "barcode_scanner_disabled": barcode_scanner_disabled,
+        "printer_type": printer_type,
+        "printer_device": printer_device,
+    }
 
 
 @app.put("/api/settings")
@@ -341,6 +360,16 @@ def update_settings(body: dict):
             _set_setting(session, "receipt_printing", str(body["receipt_printing"]))
         if "card_button_disabled" in body:
             _set_setting(session, "card_button_disabled", str(body["card_button_disabled"]))
+        if "store_name" in body:
+            _set_setting(session, "store_name", str(body["store_name"]))
+        if "store_logo" in body:
+            _set_setting(session, "store_logo", str(body["store_logo"]))
+        if "barcode_scanner_disabled" in body:
+            _set_setting(session, "barcode_scanner_disabled", str(body["barcode_scanner_disabled"]))
+        if "printer_type" in body:
+            _set_setting(session, "printer_type", str(body["printer_type"]))
+        if "printer_device" in body:
+            _set_setting(session, "printer_device", str(body["printer_device"]))
         session.commit()
     return {"message": "Settings updated"}
 
