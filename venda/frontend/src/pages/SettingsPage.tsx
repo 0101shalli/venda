@@ -292,7 +292,7 @@ export default function SettingsPage() {
     }
   };
 
-  const canManageSettings = auth?.role === "admin" || auth?.role === "manager1";
+  const canManageSettings = auth?.role === "admin";
 
   return (
     <div className="space-y-6 pb-12">
