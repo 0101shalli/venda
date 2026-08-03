@@ -4,6 +4,7 @@ import { useCurrency } from "../context/CurrencyContext";
 interface OrderItem {
   sku: string;
   name: string;
+  description: string;
   category: string;
   unit_price: number;
   quantity: number;
@@ -155,6 +156,7 @@ export default function OrdersPage() {
                           <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-800 uppercase font-semibold text-xs tracking-wider">
                             <th className="pb-3">SKU / Barcode</th>
                             <th className="pb-3">Product Name</th>
+                            <th className="pb-3">Description</th>
                             <th className="pb-3">Category</th>
                             <th className="pb-3 text-right">Unit Price</th>
                             <th className="pb-3 text-center">Quantity</th>
@@ -166,6 +168,7 @@ export default function OrdersPage() {
                             <tr key={idx} className="text-slate-700 dark:text-slate-300">
                               <td className="py-4 font-mono text-xs">{item.sku}</td>
                               <td className="py-4 font-medium">{item.name}</td>
+                              <td className="py-4 text-xs text-slate-500 dark:text-slate-400 max-w-[200px] truncate">{item.description || "—"}</td>
                               <td className="py-4 text-slate-500 dark:text-slate-400">{item.category}</td>
                               <td className="py-4 text-right">{formatPrice(item.unit_price)}</td>
                               <td className="py-4 text-center">{item.quantity}</td>

@@ -601,6 +601,7 @@ def get_sales():
                 sale_items.append({
                     "sku": product.barcode if product else "",
                     "name": product.name if product else "",
+                    "description": product.description if product else "",
                     "category": product.category if product else "",
                     "unit_price": item.unit_price,
                     "quantity": item.quantity,
