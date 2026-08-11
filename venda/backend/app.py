@@ -268,12 +268,18 @@ def analytics_detailed():
         )).mappings()
         daily_inventory = [{"date": r["date"], "stock": r["stock"]} for r in inv_rows]
 
+        today_row = conn.execute(text(
+            "SELECT COALESCE(SUM(total_amount), 0) as total FROM sale WHERE date(timestamp) = date('now', 'localtime')"
+        )).mappings()
+        today_revenue = float(today_row.first()["total"] or 0)
+
     return {
         "sales_changes": sales_changes,
         "top_products": top_products,
         "daily_peak_hours": daily_peak_hours,
         "seasonal_sales": seasonal_sales,
         "daily_inventory": daily_inventory,
+        "today_revenue": today_revenue,
     }
 
 

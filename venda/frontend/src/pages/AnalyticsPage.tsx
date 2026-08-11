@@ -32,6 +32,7 @@ interface DetailedAnalytics {
   peak_hours: PeakHour[];
   seasonal_sales: SeasonalSale[];
   inventory_history: InventoryHistory[];
+  today_revenue: number;
 }
 
 function exportToExcel(headers: string[], rows: (string | number)[][], filename: string) {
@@ -123,6 +124,7 @@ export default function AnalyticsPage() {
     hours: useMemo(() => ({ current: null as HTMLDivElement | null }), []),
     seasonal: useMemo(() => ({ current: null as HTMLDivElement | null }), []),
     inventory: useMemo(() => ({ current: null as HTMLDivElement | null }), []),
+    daily: useMemo(() => ({ current: null as HTMLDivElement | null }), []),
   };
 
   useEffect(() => {
@@ -153,6 +155,7 @@ export default function AnalyticsPage() {
             date: item.date,
             value: Number(item.stock || 0),
           })),
+          today_revenue: Number(payload.today_revenue || 0),
         };
         setData(mappedData);
         setLoading(false);
@@ -196,6 +199,7 @@ export default function AnalyticsPage() {
   const totalItemsSold = data.items_sold.reduce((sum, item) => sum + item.quantity, 0);
   const currentValuation = data.inventory_history[data.inventory_history.length - 1]?.value || 0;
   const topHour = data.peak_hours.reduce((max, h) => (h.orders > max.orders ? h : max), { hour: 0, orders: 0 });
+  const last7Days = data.revenue_trends.slice(-7);
 
   return (
     <div className="space-y-6 pb-12 relative">
@@ -214,6 +218,15 @@ export default function AnalyticsPage() {
         <p className="mt-2 text-slate-500 dark:text-slate-400">
           Analyze sales performance, hourly peak traffic, inventory trends, and product performance.
         </p>
+      </div>
+
+      <div className="rounded-3xl bg-gradient-to-br from-indigo-600 to-violet-600 dark:from-sky-500 dark:to-sky-600 p-6 text-white shadow-sm border border-indigo-500/20 dark:border-sky-500/20 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-200 dark:text-sky-200">Today's Sales</p>
+          <p className="mt-2 text-4xl font-black">{formatPrice(data.today_revenue)}</p>
+          <p className="mt-1 text-sm text-indigo-200 dark:text-sky-200">Revenue collected today</p>
+        </div>
+        <div className="text-5xl">📈</div>
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -246,6 +259,16 @@ export default function AnalyticsPage() {
           exportFilename="revenue-trends"
         >
           <RevenueTrendsChart trends={data.revenue_trends} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
+        </ChartTile>
+
+        <ChartTile
+          title="Daily Sales (Last 7 Days)"
+          chartRef={chartRefs.daily}
+          exportHeaders={["Date", "Revenue"]}
+          exportRows={last7Days.map((t) => [t.date, t.revenue])}
+          exportFilename="daily-sales"
+        >
+          <DailySalesChart days={last7Days} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
         </ChartTile>
 
         <ChartTile
@@ -401,6 +424,89 @@ function RevenueTrendsChart({
           </text>
         </>
       )}
+    </svg>
+  );
+}
+
+function DailySalesChart({
+  days,
+  onHover,
+  onLeave,
+  currencySymbol,
+}: {
+  days: RevenueTrend[];
+  onHover: (e: React.MouseEvent, title: string, value: string) => void;
+  onLeave: () => void;
+  currencySymbol: string;
+}) {
+  const w = 600;
+  const h = 250;
+  const paddingLeft = 55;
+  const paddingRight = 20;
+  const paddingTop = 25;
+  const paddingBottom = 35;
+
+  const chartW = w - paddingLeft - paddingRight;
+  const chartH = h - paddingTop - paddingBottom;
+
+  const maxVal = Math.max(...days.map((d) => d.revenue), 100);
+  const barWidth = (chartW / Math.max(days.length, 1)) * 0.6;
+  const step = chartW / Math.max(days.length, 1);
+
+  return (
+    <svg className="w-full h-full" viewBox={`0 0 ${w} ${h}`}>
+      <defs>
+        <linearGradient id="dailyGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#6366F1" />
+          <stop offset="100%" stopColor="#818CF8" />
+        </linearGradient>
+      </defs>
+
+      {[0, 0.25, 0.5, 0.75, 1].map((r, i) => {
+        const y = paddingTop + chartH * r;
+        const val = maxVal - r * maxVal;
+        return (
+          <g key={i}>
+            <line x1={paddingLeft} y1={y} x2={w - paddingRight} y2={y} stroke="#334155" strokeDasharray="3 3" opacity="0.15" />
+            <text x={paddingLeft - 10} y={y + 4} textAnchor="end" className="text-[10px] fill-slate-400 font-semibold">
+              {currencySymbol}{val.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </text>
+          </g>
+        );
+      })}
+
+      {days.map((item, idx) => {
+        const barHeight = (item.revenue / maxVal) * chartH;
+        const x = paddingLeft + idx * step + (step - barWidth) / 2;
+        const y = paddingTop + chartH - barHeight;
+        const isLast = idx === days.length - 1;
+
+        return (
+          <g key={idx}>
+            <rect
+              x={x}
+              y={y}
+              width={barWidth}
+              height={Math.max(barHeight, 2)}
+              rx="4"
+              fill={isLast ? "url(#dailyGrad)" : "url(#dailyGrad)"}
+              opacity={isLast ? 1 : 0.55}
+              className="cursor-pointer hover:opacity-90"
+              onMouseEnter={(e) =>
+                onHover(
+                  e,
+                  new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+                  `${currencySymbol}${item.revenue.toFixed(2)}`
+                )
+              }
+              onMouseLeave={onLeave}
+            />
+            <text x={x + barWidth / 2} y={h - 12} textAnchor="middle" className="text-[10px] fill-slate-400 font-semibold">
+              {new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
