@@ -14,4 +14,5 @@ venda/build/
 # IDE configurations and OS files
 .vscode/
 .idea/
+__pycache__/
 .DS_Store
