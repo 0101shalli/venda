@@ -116,6 +116,9 @@ def _product_to_dict(p: Product, session=None) -> dict:
         "manufacturing_date": batch_info.get("manufacturing_date", ""),
         "expiry_date": batch_info.get("expiry_date", ""),
         "supplier_id": batch_info.get("supplier_id"),
+        "bargain_enabled": p.bargain_enabled,
+        "min_selling_price": p.min_selling_price,
+        "bargain_steps": [int(x) for x in (p.bargain_steps or "").split(",") if x.strip().isdigit()],
     }
 
 
@@ -132,6 +135,9 @@ def startup_event() -> None:
             "supplier_phone": "TEXT",
             "is_batch_tracked": "BOOLEAN DEFAULT 0",
             "batch_id": "INTEGER",
+            "bargain_enabled": "BOOLEAN DEFAULT 0",
+            "min_selling_price": "REAL",
+            "bargain_steps": "TEXT",
         }
         for col_name, col_def in new_cols.items():
             if col_name not in existing_cols:
@@ -167,6 +173,7 @@ def startup_event() -> None:
             "barcode_scanner_disabled": "false",
             "printer_type": "file",
             "printer_device": "",
+            "bargain_enabled": "false",
         }
         for key, value in defaults.items():
             existing = session.exec(select(SystemSetting).where(SystemSetting.key == key)).first()
@@ -358,6 +365,7 @@ def get_settings():
         barcode_scanner_disabled = _get_setting(session, "barcode_scanner_disabled") or "false"
         printer_type = _get_setting(session, "printer_type") or "file"
         printer_device = _get_setting(session, "printer_device") or ""
+        bargain_enabled = _get_setting(session, "bargain_enabled") or "false"
     return {
         "currency": currency,
         "receipt_printing": receipt_printing,
@@ -367,6 +375,7 @@ def get_settings():
         "barcode_scanner_disabled": barcode_scanner_disabled,
         "printer_type": printer_type,
         "printer_device": printer_device,
+        "bargain_enabled": bargain_enabled,
     }
 
 
@@ -389,6 +398,8 @@ def update_settings(body: dict):
             _set_setting(session, "printer_type", str(body["printer_type"]))
         if "printer_device" in body:
             _set_setting(session, "printer_device", str(body["printer_device"]))
+        if "bargain_enabled" in body:
+            _set_setting(session, "bargain_enabled", str(body["bargain_enabled"]))
         session.commit()
     return {"message": "Settings updated"}
 
@@ -669,12 +680,44 @@ def create_sale(body: dict):
             qty = item["quantity"]
             if product.current_stock < qty:
                 raise HTTPException(status_code=400, detail=f"Insufficient stock for {product.name}")
+
+            unit_price = product.selling_price
+            bargain_type = item.get("bargain_type")
+
+            if "unit_price" in item and item.get("unit_price") is not None:
+                unit_price = round(float(item["unit_price"]), 2)
+
+                # Bargain validation (a price different from the default selling price)
+                if round(unit_price, 2) != round(product.selling_price, 2):
+                    if (_get_setting(session, "bargain_enabled") or "false") != "true":
+                        raise HTTPException(status_code=400, detail="Bargain feature is disabled in system settings")
+                    if not product.bargain_enabled:
+                        raise HTTPException(status_code=400, detail=f"Bargain is not enabled for {product.name}")
+                    if unit_price > product.selling_price:
+                        raise HTTPException(status_code=400, detail="Bargain price cannot exceed the selling price")
+
+                    if bargain_type == "manual":
+                        if cashier is None or cashier.role not in ("admin", "manager1", "manager2"):
+                            raise HTTPException(status_code=403, detail="Manual bargain requires manager privileges")
+                        floor = product.cost_price
+                    else:
+                        floor = round(product.cost_price * 1.15, 2)
+
+                    if product.min_selling_price is not None:
+                        floor = max(floor, product.min_selling_price)
+
+                    if unit_price < floor:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Bargain price for {product.name} cannot be below {floor}",
+                        )
+
             product.current_stock -= qty
             session.add(product)
-            line_total = product.selling_price * qty
+            line_total = unit_price * qty
             total += line_total
-            sale_items.append({"product_id": product.id, "quantity": qty, "unit_price": product.selling_price})
-            item_details.append({"name": product.name, "qty": qty, "price": product.selling_price, "line_total": line_total})
+            sale_items.append({"product_id": product.id, "quantity": qty, "unit_price": unit_price})
+            item_details.append({"name": product.name, "qty": qty, "price": unit_price, "line_total": line_total})
 
             # Record inventory transaction
             txn = InventoryTransaction(
@@ -761,6 +804,9 @@ def lookup_product(barcode: str):
             "selling_price": product.selling_price,
             "current_stock": product.current_stock,
             "min_stock_level": product.min_stock_level,
+            "bargain_enabled": product.bargain_enabled,
+            "min_selling_price": product.min_selling_price,
+            "bargain_steps": [int(x) for x in (product.bargain_steps or "").split(",") if x.strip().isdigit()],
         }
 
 
@@ -783,6 +829,9 @@ def search_products(q: str = ""):
                 "selling_price": p.selling_price,
                 "current_stock": p.current_stock,
                 "min_stock_level": p.min_stock_level,
+                "bargain_enabled": p.bargain_enabled,
+                "min_selling_price": p.min_selling_price,
+                "bargain_steps": [int(x) for x in (p.bargain_steps or "").split(",") if x.strip().isdigit()],
             }
             for p in products
         ]
@@ -799,6 +848,26 @@ def search_products_profit(q: str = ""):
             )
         products = session.exec(query.limit(50)).all()
         return [_product_to_dict(p) for p in products]
+
+
+@app.get("/api/bargain/products/{product_id}")
+def get_product_bargain(product_id: int):
+    with get_session() as session:
+        product = session.get(Product, product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        system_bargain_enabled = (_get_setting(session, "bargain_enabled") or "false") == "true"
+        return {
+            "product_id": product.id,
+            "name": product.name,
+            "cost_price": product.cost_price,
+            "selling_price": product.selling_price,
+            "target_price": product.selling_price,
+            "bargain_enabled": product.bargain_enabled,
+            "system_bargain_enabled": system_bargain_enabled,
+            "min_selling_price": product.min_selling_price,
+            "bargain_steps": [int(x) for x in (product.bargain_steps or "").split(",") if x.strip().isdigit()],
+        }
 
 
 @app.put("/api/products/{product_id}/profit")
@@ -857,6 +926,9 @@ class ProductCreate(BaseModel):
     batch_number: str = ""
     manufacturing_date: str = ""
     expiry_date: str = ""
+    bargain_enabled: bool = False
+    min_selling_price: float | None = None
+    bargain_steps: str = ""
 
 
 def generate_barcode() -> str:
@@ -908,6 +980,9 @@ class ProductUpdate(BaseModel):
     batch_number: str | None = None
     manufacturing_date: str | None = None
     expiry_date: str | None = None
+    bargain_enabled: bool | None = None
+    min_selling_price: float | None = None
+    bargain_steps: str | None = None
 
 
 class ProductResponse(BaseModel):
@@ -1053,6 +1128,13 @@ def create_product(product: ProductCreate):
         if existing:
             raise HTTPException(status_code=400, detail="Product with this barcode already exists")
 
+        if (
+            product.bargain_enabled
+            and product.min_selling_price is not None
+            and product.min_selling_price < product.cost_price
+        ):
+            raise HTTPException(status_code=400, detail="Minimum selling price cannot be less than the cost price")
+
         new_product = Product(
             barcode=barcode,
             name=product.name,
@@ -1069,6 +1151,9 @@ def create_product(product: ProductCreate):
             supplier_phone=product.supplier_phone,
             warehouse_location=product.warehouse_location,
             is_batch_tracked=product.is_batch_tracked,
+            bargain_enabled=product.bargain_enabled,
+            min_selling_price=product.min_selling_price,
+            bargain_steps=product.bargain_steps,
         )
         session.add(new_product)
         session.commit()
@@ -1112,6 +1197,12 @@ def update_product(product_id: int, product_update: ProductUpdate):
             if value is not None:
                 setattr(product, field, value)
 
+        if (
+            product.bargain_enabled
+            and product.min_selling_price is not None
+            and product.min_selling_price < product.cost_price
+        ):
+            raise HTTPException(status_code=400, detail="Minimum selling price cannot be less than the cost price")
 
         if product.is_batch_tracked:
             batch = session.get(Batch, product.batch_id) if product.batch_id else None

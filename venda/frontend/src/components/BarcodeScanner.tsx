@@ -10,6 +10,9 @@ export type ProductInfo = {
   selling_price: number;
   min_stock_level: number;
   category: string;
+  bargain_enabled?: boolean;
+  min_selling_price?: number | null;
+  bargain_steps?: number[];
 };
 
 type BarcodeScannerProps = {

@@ -24,8 +24,12 @@ export type Product = {
   batch_number?: string;
   manufacturing_date?: string;
   expiry_date?: string;
+  bargain_enabled?: boolean;
+  min_selling_price?: number | null;
+  bargain_steps?: string;
 };
 
+const BARGIN_STEPS = [100, 500, 1000, 2000, 5000, 10000];
 
 const generateBarcode = () => {
   const prefix = "750";
@@ -64,13 +68,19 @@ const EMPTY_FORM: Product = {
   batch_number: "",
   manufacturing_date: "",
   expiry_date: "",
+  bargain_enabled: false,
+  min_selling_price: null,
+  bargain_steps: "",
 };
 
 export default function ProductModal({ isOpen, isEditMode, product, onClose, onSave, categories = DEFAULT_CATEGORIES }: ProductModalProps) {
-  const { currencySymbol } = useCurrency();
+  const { currencySymbol, formatPrice } = useCurrency();
   const [formData, setFormData] = useState<Product>(EMPTY_FORM);
+  const [systemBargainEnabled, setSystemBargainEnabled] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [minPriceError, setMinPriceError] = useState<string | null>(null);
+  const [minPriceInput, setMinPriceInput] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanFlash, setScanFlash] = useState(false);
@@ -97,12 +107,17 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
   useEffect(() => {
     if (isEditMode && product) {
       const merged = { ...EMPTY_FORM, ...product } as Product;
+      if (Array.isArray(merged.bargain_steps)) {
+        merged.bargain_steps = (merged.bargain_steps as unknown as number[]).join(",");
       }
       setFormData(merged);
     } else {
       setFormData({ ...EMPTY_FORM, barcode: generateBarcode() });
     }
     setErrors({});
+    setMinPriceError(null);
+    setMinPriceInput(
+      isEditMode && product && product.min_selling_price != null ? String(product.min_selling_price) : ""
     );
   }, [isOpen, isEditMode, product]);
 
@@ -110,6 +125,8 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     if (!isOpen) return;
     fetch("/api/settings")
       .then((res) => res.json())
+      .then((data) => setSystemBargainEnabled(data.bargain_enabled === "true"))
+      .catch(() => setSystemBargainEnabled(false));
   }, [isOpen]);
 
   const validateForm = () => {
@@ -121,6 +138,13 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     if (formData.selling_price < 0) newErrors.selling_price = "Selling price must be positive";
     if (formData.selling_price <= formData.cost_price) {
       newErrors.selling_price = "Selling price must be greater than cost price";
+    }
+    if (
+      formData.bargain_enabled &&
+      formData.min_selling_price != null &&
+      formData.min_selling_price < formData.cost_price
+    ) {
+      newErrors.min_selling_price = "Minimum selling price cannot be less than the cost price";
     }
 
     setErrors(newErrors);
@@ -145,6 +169,11 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     const newFormData = { ...formData, cost_price: newCost };
     if (newFormData.profit_percentage > 0) {
       newFormData.selling_price = parseFloat((newCost * (1 + newFormData.profit_percentage / 100)).toFixed(2));
+    }
+    if (newFormData.min_selling_price != null && newFormData.min_selling_price < newCost) {
+      newFormData.min_selling_price = newCost;
+      setMinPriceInput(String(newCost));
+      setMinPriceError(null);
     }
     setFormData(newFormData);
   };
@@ -196,6 +225,8 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     }
   };
 
+  const toggleBargainStep = (step: number) => {
+    const steps = (formData.bargain_steps || "")
       .split(",")
       .map((s) => s.trim())
       .filter((s) => s !== "");
@@ -205,6 +236,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     } else {
       steps.push(String(step));
     }
+    setFormData({ ...formData, bargain_steps: steps.join(",") });
   };
 
   if (!isOpen) return null;
@@ -545,6 +577,140 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
               </div>
             </div>
           </div>
+
+          {/* Bargain */}
+          {systemBargainEnabled && (
+            <div>
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Bargain</h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Bargain for this Product</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {formData.bargain_enabled
+                        ? "Customers can bargain on this product at checkout."
+                        : "Turn on to allow bargaining on this product."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, bargain_enabled: !formData.bargain_enabled })}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all active:scale-95 ${
+                      formData.bargain_enabled
+                        ? "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                        : "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-sky-500 dark:hover:bg-sky-600"
+                    }`}
+                  >
+                    {formData.bargain_enabled ? "Disable Bargain" : "Enable Bargain"}
+                  </button>
+                </div>
+
+                {formData.bargain_enabled && (
+                  <>
+                    <div>
+                      <label htmlFor="min_selling_price" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Minimum Selling Price ({currencySymbol})
+                      </label>
+                      <input
+                        id="min_selling_price"
+                        type="text"
+                        inputMode="decimal"
+                        value={minPriceInput}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/[^0-9.]/g, "");
+                          const dotIndex = raw.indexOf(".");
+                          const sanitized = dotIndex >= 0
+                            ? raw.slice(0, dotIndex + 1) + raw.slice(dotIndex + 1).replace(/\./g, "")
+                            : raw;
+                          setMinPriceInput(sanitized);
+                          if (sanitized === "") {
+                            setFormData({ ...formData, min_selling_price: null });
+                            setMinPriceError(null);
+                            return;
+                          }
+                          const value = parseFloat(sanitized);
+                          if (!Number.isFinite(value)) {
+                            setMinPriceError("Please enter a valid number.");
+                            return;
+                          }
+                          if (value < formData.cost_price) {
+                            setMinPriceError(
+                              `Minimum price cannot be less than the cost price (${formatPrice(formData.cost_price)}).`
+                            );
+                            return;
+                          }
+                          setFormData({ ...formData, min_selling_price: value });
+                          setMinPriceError(null);
+                        }}
+                        onBlur={() => {
+                          if (minPriceInput === "") {
+                            setFormData({ ...formData, min_selling_price: null });
+                            setMinPriceError(null);
+                            return;
+                          }
+                          const value = parseFloat(minPriceInput);
+                          if (!Number.isFinite(value)) return;
+                          if (value < formData.cost_price) {
+                            setFormData({ ...formData, min_selling_price: formData.cost_price });
+                            setMinPriceInput(String(formData.cost_price));
+                            setMinPriceError(null);
+                          }
+                        }}
+                        className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:ring-1 outline-none ${
+                          minPriceError || errors.min_selling_price
+                            ? "border-red-500 dark:border-red-600 focus:border-red-500 focus:ring-red-500 dark:focus:ring-red-900"
+                            : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                        }`}
+                        placeholder="Lowest price allowed when bargaining"
+                      />
+                      {(minPriceError || errors.min_selling_price) && (
+                        <p className="mt-1 text-xs text-red-500 dark:text-red-400">
+                          {minPriceError || errors.min_selling_price}
+                        </p>
+                      )}
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Must be a number and at least the cost price ({formatPrice(formData.cost_price)}). Target price is the selling price ({formatPrice(formData.selling_price)}).
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Bargain Steps ({currencySymbol})</label>
+                      <div className="flex flex-wrap gap-2">
+                        {BARGIN_STEPS.map((step) => {
+                          const selected = (formData.bargain_steps || "")
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                            .includes(String(step));
+                          return (
+                            <label
+                              key={step}
+                              className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
+                                selected
+                                  ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-sky-500 dark:bg-sky-900/30 dark:text-sky-400"
+                                  : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => toggleBargainStep(step)}
+                                className="sr-only"
+                              />
+                              {formatPrice(step)}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Select the discount amounts offered during manual bargaining.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Logistics */}
           <div>

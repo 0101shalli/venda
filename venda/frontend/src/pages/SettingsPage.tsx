@@ -46,6 +46,8 @@ export default function SettingsPage() {
 
   const [barcodeScannerDisabled, setBarcodeScannerDisabled] = useState(false);
 
+  const [bargainEnabled, setBargainEnabled] = useState(false);
+
   const [printerType, setPrinterType] = useState("file");
   const [printerDevice, setPrinterDevice] = useState("");
   const [printerSaving, setPrinterSaving] = useState(false);
@@ -97,6 +99,7 @@ export default function SettingsPage() {
         setReceiptPrinting(data.receipt_printing === "true");
         setCardDisabled(data.card_button_disabled === "true");
         setBarcodeScannerDisabled(data.barcode_scanner_disabled === "true");
+        setBargainEnabled(data.bargain_enabled === "true");
         setPrinterType(data.printer_type || "file");
         setPrinterDevice(data.printer_device || "");
         setStoreName(data.store_name || "");
@@ -145,6 +148,26 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error("Failed to update");
       setCardDisabled(newValue);
       setSaveMessage({ type: "success", text: "Card button setting updated!" });
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (err: any) {
+      setSaveMessage({ type: "error", text: err.message });
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const handleBargainToggle = async () => {
+    setConfigSaving(true);
+    const newValue = !bargainEnabled;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bargain_enabled: String(newValue) }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      setBargainEnabled(newValue);
+      setSaveMessage({ type: "success", text: "Bargain feature setting updated!" });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -413,6 +436,28 @@ export default function SettingsPage() {
                 <span
                   className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
                     barcodeScannerDisabled ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Enable Bargain Feature</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Allow automatic and manual bargaining on products at checkout</p>
+              </div>
+              <button
+                onClick={handleBargainToggle}
+                disabled={configSaving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  bargainEnabled ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
+                    bargainEnabled ? "translate-x-7" : "translate-x-1"
                   }`}
                 />
               </button>

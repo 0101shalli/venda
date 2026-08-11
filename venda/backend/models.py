@@ -44,6 +44,9 @@ class Product(SQLModel, table=True):
     warehouse_location: Optional[str] = None
     is_batch_tracked: bool = Field(default=False)
     batch_id: Optional[int] = Field(default=None, foreign_key="batch.id")
+    bargain_enabled: bool = Field(default=False)
+    min_selling_price: Optional[float] = Field(default=None)
+    bargain_steps: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

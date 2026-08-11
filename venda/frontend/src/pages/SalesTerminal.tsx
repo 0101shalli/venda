@@ -3,7 +3,7 @@ import BarcodeScanner, { ProductInfo } from "../components/BarcodeScanner";
 import { useCurrency } from "../context/CurrencyContext";
 import { getAuth } from "../services/auth";
 
-type CartItem = ProductInfo & { quantity: number };
+type CartItem = ProductInfo & { quantity: number; bargainPrice?: number; bargainType?: "auto" | "manual" };
 
 function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
   const { formatPrice } = useCurrency();
@@ -102,22 +102,256 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
   );
 }
 
-function CartRow({
+function BargainModal({
   item,
-  onQtyChange,
-  onRemove,
+  isManager,
+  onClose,
+  onApply,
 }: {
   item: CartItem;
-  onQtyChange: (id: number, qty: number) => void;
-  onRemove: (id: number) => void;
+  isManager: boolean;
+  onClose: () => void;
+  onApply: (itemId: number, unitPrice: number, bargainType: "auto" | "manual") => void;
 }) {
   const { formatPrice } = useCurrency();
-  const subtotal = item.selling_price * item.quantity;
+  const [mode, setMode] = useState<"auto" | "manual">("auto");
+  const [autoPrice, setAutoPrice] = useState(item.selling_price);
+  const [manualPrice, setManualPrice] = useState(item.selling_price);
+  const [selectedSteps, setSelectedSteps] = useState<number[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const cost = item.cost_price;
+  const autoFloor = Math.ceil(cost * 1.15 * 100) / 100;
+  const manualFloor = cost;
+  const minSelling = item.min_selling_price ?? null;
+  const effectiveAutoFloor = minSelling != null ? Math.max(autoFloor, minSelling) : autoFloor;
+  const effectiveManualFloor = minSelling != null ? Math.max(manualFloor, minSelling) : manualFloor;
+
+  const steps = item.bargain_steps || [];
+  const stepSum = selectedSteps.reduce((a, b) => a + b, 0);
+  const autoReduction = item.selling_price - autoPrice;
+  const manualReduction = item.selling_price - manualPrice;
+
+  const handleStepToggle = (step: number) => {
+    const next = selectedSteps.includes(step)
+      ? selectedSteps.filter((s) => s !== step)
+      : [...selectedSteps, step];
+    setSelectedSteps(next);
+    setManualPrice(item.selling_price - next.reduce((a, b) => a + b, 0));
+    setError(null);
+  };
+
+  const handleManualPriceChange = (value: number) => {
+    setManualPrice(value);
+    setSelectedSteps([]);
+    setError(null);
+  };
+
+  const handleApply = () => {
+    if (mode === "auto") {
+      if (effectiveAutoFloor >= item.selling_price) {
+        setError("This product cannot be auto-bargained below its selling price.");
+        return;
+      }
+      onApply(item.id, autoPrice, "auto");
+    } else {
+      if (manualPrice < effectiveManualFloor || manualPrice > item.selling_price) {
+        setError(`Price must be between ${formatPrice(effectiveManualFloor)} and ${formatPrice(item.selling_price)}.`);
+        return;
+      }
+      onApply(item.id, manualPrice, "manual");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-6">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Bargain</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          {item.name} · Barcode {item.barcode}
+        </p>
+
+        <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 grid grid-cols-3 gap-3 text-center">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Selling Price</p>
+            <p className="mt-1 font-bold text-slate-800 dark:text-white">{formatPrice(item.selling_price)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Cost Price</p>
+            <p className="mt-1 font-bold text-slate-800 dark:text-white">{formatPrice(item.cost_price)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-400">Min Selling</p>
+            <p className="mt-1 font-bold text-slate-800 dark:text-white">
+              {minSelling != null ? formatPrice(minSelling) : "—"}
+            </p>
+          </div>
+        </div>
+
+        {/* Mode switcher */}
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode("auto")}
+            className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+              mode === "auto"
+                ? "bg-indigo-600 text-white dark:bg-sky-500"
+                : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+            }`}
+          >
+            Automatic (All users)
+          </button>
+          {isManager && (
+            <button
+              type="button"
+              onClick={() => setMode("manual")}
+              className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+                mode === "manual"
+                  ? "bg-indigo-600 text-white dark:bg-sky-500"
+                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+              }`}
+            >
+              Manual (Managers)
+            </button>
+          )}
+        </div>
+
+        {mode === "auto" ? (
+          <div className="mt-5">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Bargained Price</p>
+              <p className="text-xl font-black text-indigo-700 dark:text-sky-400">{formatPrice(autoPrice)}</p>
+            </div>
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              Floor {formatPrice(effectiveAutoFloor)} (cost + 15%) · Reduced by {formatPrice(autoReduction)}
+            </p>
+            <input
+              type="range"
+              min={Math.min(effectiveAutoFloor, item.selling_price)}
+              max={item.selling_price}
+              step={1}
+              value={Math.max(autoPrice, Math.min(effectiveAutoFloor, item.selling_price))}
+              onChange={(e) => setAutoPrice(parseFloat(e.target.value))}
+              disabled={effectiveAutoFloor >= item.selling_price}
+              className="mt-4 w-full accent-indigo-600 dark:accent-sky-500"
+            />
+            {effectiveAutoFloor >= item.selling_price && (
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                Auto bargaining is not possible for this product — the floor is above the selling price.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="mt-5">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Selling Price for this Customer
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min={effectiveManualFloor}
+              max={item.selling_price}
+              value={manualPrice}
+              onChange={(e) => handleManualPriceChange(parseFloat(e.target.value) || 0)}
+              className="mt-1 block w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900 outline-none"
+            />
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              Cannot go below {formatPrice(effectiveManualFloor)} (cost price) or above {formatPrice(item.selling_price)}.
+            </p>
+
+            {steps.length > 0 && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Bargain Steps</label>
+                <div className="flex flex-wrap gap-2">
+                  {steps.map((step) => {
+                    const selected = selectedSteps.includes(step);
+                    return (
+                      <button
+                        key={step}
+                        type="button"
+                        onClick={() => handleStepToggle(step)}
+                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all active:scale-95 ${
+                          selected
+                            ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-sky-500 dark:bg-sky-900/30 dark:text-sky-400"
+                            : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                        }`}
+                      >
+                        -{formatPrice(step)}
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedSteps.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-indigo-200 dark:border-sky-900 bg-indigo-50 dark:bg-sky-900/20 px-4 py-3">
+                    <p className="text-xs text-indigo-600 dark:text-sky-400">Total reduction: {formatPrice(stepSum)}</p>
+                    <p className="text-sm font-bold text-indigo-700 dark:text-sky-400 mt-0.5">
+                      New price: {formatPrice(item.selling_price - stepSum)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <p className="mt-4 rounded-xl bg-rose-50 dark:bg-rose-900/20 px-4 py-2.5 text-sm font-medium text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900">
+            {error}
+          </p>
+        )}
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            className="rounded-xl bg-indigo-600 dark:bg-sky-500 px-6 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CartRow({
+  item,
+  bargainEnabled,
+  onQtyChange,
+  onRemove,
+  onBargain,
+}: {
+  item: CartItem;
+  bargainEnabled: boolean;
+  onQtyChange: (id: number, qty: number) => void;
+  onRemove: (id: number) => void;
+  onBargain: (item: CartItem) => void;
+}) {
+  const { formatPrice } = useCurrency();
+  const unitPrice = item.bargainPrice ?? item.selling_price;
+  const subtotal = unitPrice * item.quantity;
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{item.name}</p>
-        <p className="text-xs text-slate-400 dark:text-slate-500">{formatPrice(item.selling_price)} each</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500">
+          {item.bargainPrice != null ? (
+            <>
+              <span className="line-through">{formatPrice(item.selling_price)}</span>{" "}
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatPrice(unitPrice)} each</span>
+            </>
+          ) : (
+            <>{formatPrice(item.selling_price)} each</>
+          )}
+        </p>
       </div>
 
       <div className="flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1">
@@ -148,6 +382,18 @@ function CartRow({
 
       <span className="w-20 text-right text-sm font-bold text-slate-800 dark:text-white">{formatPrice(subtotal)}</span>
 
+      {bargainEnabled && item.bargain_enabled && (
+        <button
+          id={`bargain-${item.id}`}
+          type="button"
+          onClick={() => onBargain(item)}
+          className="flex h-7 items-center gap-1 rounded-xl bg-amber-50 dark:bg-amber-900/20 px-2 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+          title="Bargain this item"
+        >
+          {item.bargainPrice != null ? "🔄" : "🪙"}
+        </button>
+      )}
+
       <button
         id={`remove-${item.id}`}
         type="button"
@@ -176,8 +422,13 @@ export default function SalesTerminal() {
   };
   const [cardDisabled, setCardDisabled] = useState(false);
   const [barcodeScannerDisabled, setBarcodeScannerDisabled] = useState(false);
+  const [bargainEnabled, setBargainEnabled] = useState(false);
+  const [bargainItem, setBargainItem] = useState<CartItem | null>(null);
   const [hasManager1, setHasManager1] = useState<boolean | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
+
+  const auth = getAuth();
+  const isManager = auth ? ["admin", "manager1", "manager2"].includes(auth.role) : false;
 
   useEffect(() => {
     Promise.all([
@@ -187,6 +438,7 @@ export default function SalesTerminal() {
       .then(([settings, managerCheck]) => {
         setCardDisabled(settings.card_button_disabled === "true");
         setBarcodeScannerDisabled(settings.barcode_scanner_disabled === "true");
+        setBargainEnabled(settings.bargain_enabled === "true");
         setHasManager1(managerCheck.exists);
       })
       .catch(() => {
@@ -217,6 +469,11 @@ export default function SalesTerminal() {
 
   const removeItem = (id: number) => setCart((prev) => prev.filter((i) => i.id !== id));
 
+  const applyBargain = (itemId: number, unitPrice: number, bargainType: "auto" | "manual") => {
+    setCart((prev) => prev.map((i) => (i.id === itemId ? { ...i, bargainPrice: unitPrice, bargainType } : i)));
+    setBargainItem(null);
+  };
+
   const clearCart = () => {
     setCart([]);
     setCheckoutStatus("idle");
@@ -240,6 +497,9 @@ export default function SalesTerminal() {
           items: cart.map((item) => ({
             product_id: item.id,
             quantity: item.quantity,
+            ...(item.bargainPrice != null
+              ? { unit_price: item.bargainPrice, bargain_type: item.bargainType || "auto" }
+              : {}),
           })),
         }),
       });
@@ -266,7 +526,7 @@ export default function SalesTerminal() {
     }
   };
 
-  const total = cart.reduce((sum, i) => sum + i.selling_price * i.quantity, 0);
+  const total = cart.reduce((sum, i) => sum + (i.bargainPrice ?? i.selling_price) * i.quantity, 0);
   const itemCount = cart.reduce((sum, i) => sum + i.quantity, 0);
 
   if (loadingConfig) {
@@ -391,8 +651,10 @@ export default function SalesTerminal() {
                   <CartRow
                     key={item.id}
                     item={item}
+                    bargainEnabled={bargainEnabled}
                     onQtyChange={changeQty}
                     onRemove={removeItem}
+                    onBargain={setBargainItem}
                   />
                 ))}
               </div>
@@ -444,6 +706,15 @@ export default function SalesTerminal() {
           )}
         </div>
       </div>
+
+      {bargainItem && (
+        <BargainModal
+          item={bargainItem}
+          isManager={isManager}
+          onClose={() => setBargainItem(null)}
+          onApply={applyBargain}
+        />
+      )}
     </div>
   );
 }
