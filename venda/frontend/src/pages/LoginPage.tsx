@@ -1,10 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { setAuth, AuthData } from "../services/auth";
 
 export default function LoginPage({ onSuccess }: { onSuccess: (data: AuthData) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [storeName, setStoreName] = useState("");
+  const [storeLogo, setStoreLogo] = useState("");
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => {
+        setStoreName(data.store_name || "");
+        setStoreLogo(data.store_logo || "");
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -34,8 +46,20 @@ export default function LoginPage({ onSuccess }: { onSuccess: (data: AuthData) =
   return (
     <div className="grid min-h-screen place-items-center bg-slate-50 p-4">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-lg">
-        <h1 className="text-3xl font-semibold">Store Login</h1>
-        <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+        <div className="mb-8 flex flex-col items-center text-center">
+          {storeLogo ? (
+            <div className="h-40 w-40 rounded-3xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center p-3 shadow-md mb-4">
+              <img src={storeLogo} alt="Store logo" className="h-36 w-36 object-contain" />
+            </div>
+          ) : (
+            <div className="h-40 w-40 rounded-3xl bg-slate-900 flex items-center justify-center text-white text-6xl font-bold mb-4 shadow-md">
+              {(storeName || "S")[0].toUpperCase()}
+            </div>
+          )}
+          <h1 className="text-2xl font-semibold text-slate-900">{storeName || "General Store"}</h1>
+          <p className="mt-1 text-sm text-slate-500">Sign in to continue</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
           <label className="block">
             <span className="text-slate-700">Username</span>
             <input

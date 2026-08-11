@@ -637,9 +637,31 @@ export default function SettingsPage() {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Store Logo</label>
-                {storeLogo && (
-                  <div className="mb-2">
-                    <img src={storeLogo} alt="Store logo" className="h-16 w-16 object-contain rounded-lg border border-slate-200 dark:border-slate-700" />
+                {storeLogo ? (
+                  <div className="mb-3">
+                    <div className="inline-flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
+                      <div className="h-32 w-32 rounded-2xl overflow-hidden flex items-center justify-center bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shrink-0">
+                        <img src={storeLogo} alt="Store logo" className="h-28 w-28 object-contain" />
+                      </div>
+                      <div>
+                        <p className="text-lg font-semibold text-slate-700 dark:text-slate-300">
+                          {storeName || "General Store"}
+                        </p>
+                        <p className="text-sm text-slate-400 dark:text-slate-500">Store logo preview</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-3 inline-flex items-center gap-4 p-4 rounded-2xl border border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+                    <div className="h-32 w-32 rounded-2xl flex items-center justify-center text-white text-4xl font-bold bg-indigo-600 dark:bg-sky-500">
+                      {(storeName || "G")[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-lg font-semibold text-slate-700 dark:text-slate-300">
+                        {storeName || "General Store"}
+                      </p>
+                      <p className="text-sm text-slate-400 dark:text-slate-500">No logo uploaded yet</p>
+                    </div>
                   </div>
                 )}
                 <label className="cursor-pointer inline-block rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform">
