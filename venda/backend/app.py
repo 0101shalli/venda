@@ -21,11 +21,11 @@ from sqlmodel import select, text
 
 try:
     from .database import create_db_and_tables, get_session, engine
-    from .models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
+    from .models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
     from .utils import print_receipt_with_timeout
 except (ImportError, SystemError):
     from database import create_db_and_tables, get_session, engine
-    from models import User, Product, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
+    from models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
     from utils import print_receipt_with_timeout
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -82,7 +82,18 @@ def _set_setting(session, key: str, value: str) -> None:
         session.add(SystemSetting(key=key, value=value))
 
 
-def _product_to_dict(p: Product) -> dict:
+def _product_to_dict(p: Product, session=None) -> dict:
+    batch_info = {}
+    if session is not None and p.batch_id:
+        batch = session.get(Batch, p.batch_id)
+        if batch:
+            batch_info = {
+                "batch_id": batch.id,
+                "batch_number": batch.batch_number or "",
+                "manufacturing_date": batch.manufacturing_date or "",
+                "expiry_date": batch.expiry_date or "",
+                "supplier_id": batch.supplier_id,
+            }
     return {
         "id": p.id,
         "barcode": p.barcode,
@@ -99,6 +110,12 @@ def _product_to_dict(p: Product) -> dict:
         "supplier_email": p.supplier_email,
         "supplier_phone": p.supplier_phone,
         "warehouse_location": p.warehouse_location,
+        "is_batch_tracked": p.is_batch_tracked,
+        "batch_id": batch_info.get("batch_id") or p.batch_id,
+        "batch_number": batch_info.get("batch_number", ""),
+        "manufacturing_date": batch_info.get("manufacturing_date", ""),
+        "expiry_date": batch_info.get("expiry_date", ""),
+        "supplier_id": batch_info.get("supplier_id"),
     }
 
 
@@ -113,6 +130,8 @@ def startup_event() -> None:
             "profit_percentage": "REAL DEFAULT 0",
             "supplier_email": "TEXT",
             "supplier_phone": "TEXT",
+            "is_batch_tracked": "BOOLEAN DEFAULT 0",
+            "batch_id": "INTEGER",
         }
         for col_name, col_def in new_cols.items():
             if col_name not in existing_cols:
@@ -834,6 +853,10 @@ class ProductCreate(BaseModel):
     supplier_email: str = ""
     supplier_phone: str = ""
     warehouse_location: str = ""
+    is_batch_tracked: bool = False
+    batch_number: str = ""
+    manufacturing_date: str = ""
+    expiry_date: str = ""
 
 
 def generate_barcode() -> str:
@@ -852,6 +875,21 @@ def make_unique_barcode(session) -> str:
     raise HTTPException(status_code=500, detail="Unable to generate a unique product barcode")
 
 
+def make_unique_batch_number(session) -> str:
+    for _ in range(10):
+        batch_number = f"BATCH-{datetime.utcnow().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+        existing = session.exec(select(Batch).where(Batch.batch_number == batch_number)).first()
+        if not existing:
+            return batch_number
+    raise HTTPException(status_code=500, detail="Unable to generate a unique batch number")
+
+
+@app.get("/api/inventory/generate-batch-number")
+def generate_batch_number():
+    with get_session() as session:
+        return {"batch_number": make_unique_batch_number(session)}
+
+
 class ProductUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
@@ -866,6 +904,10 @@ class ProductUpdate(BaseModel):
     supplier_email: str | None = None
     supplier_phone: str | None = None
     warehouse_location: str | None = None
+    is_batch_tracked: bool | None = None
+    batch_number: str | None = None
+    manufacturing_date: str | None = None
+    expiry_date: str | None = None
 
 
 class ProductResponse(BaseModel):
@@ -902,6 +944,7 @@ def get_inventory(category: str = "", stock_status: str = "", search: str = ""):
 
         products = session.exec(query).all()
 
+        today_str = datetime.utcnow().date().isoformat()
         filtered_products = []
         for p in products:
             if stock_status == "In Stock" and p.current_stock > 10:
@@ -910,10 +953,15 @@ def get_inventory(category: str = "", stock_status: str = "", search: str = ""):
                 filtered_products.append(p)
             elif stock_status == "Out of Stock" and p.current_stock == 0:
                 filtered_products.append(p)
+            elif stock_status == "Expired":
+                if p.is_batch_tracked and p.batch_id:
+                    batch = session.get(Batch, p.batch_id)
+                    if batch and batch.expiry_date and batch.expiry_date < today_str:
+                        filtered_products.append(p)
             elif stock_status == "" or stock_status == "All":
                 filtered_products.append(p)
 
-        return [_product_to_dict(p) for p in filtered_products]
+        return [_product_to_dict(p, session) for p in filtered_products]
 
 
 @app.get("/api/inventory/{product_id}/sales")
@@ -968,6 +1016,17 @@ def inventory_stats():
         total_value = sum(p.current_stock * p.cost_price for p in products)
         total_retail_value = sum(p.current_stock * p.selling_price for p in products)
 
+        today_str = datetime.utcnow().date().isoformat()
+        expired_products = 0
+        restock = 0
+        for p in products:
+            if p.current_stock < p.reorder_point:
+                restock += 1
+            if p.is_batch_tracked and p.batch_id:
+                batch = session.get(Batch, p.batch_id)
+                if batch and batch.expiry_date and batch.expiry_date < today_str:
+                    expired_products += 1
+
         categories = list(set(p.category for p in products))
 
         return {
@@ -975,6 +1034,8 @@ def inventory_stats():
             "in_stock": in_stock,
             "low_stock": low_stock,
             "out_of_stock": out_of_stock,
+            "expired_products": expired_products,
+            "restock": restock,
             "total_value": total_value,
             "total_retail_value": total_retail_value,
             "categories": categories,
@@ -1007,12 +1068,31 @@ def create_product(product: ProductCreate):
             supplier_email=product.supplier_email,
             supplier_phone=product.supplier_phone,
             warehouse_location=product.warehouse_location,
+            is_batch_tracked=product.is_batch_tracked,
         )
         session.add(new_product)
         session.commit()
         session.refresh(new_product)
 
-        return _product_to_dict(new_product)
+        if product.is_batch_tracked:
+            batch_number = product.batch_number.strip() if product.batch_number else ""
+            if not batch_number:
+                batch_number = make_unique_batch_number(session)
+            batch = Batch(
+                batch_number=batch_number,
+                product_id=new_product.id,
+                manufacturing_date=product.manufacturing_date or None,
+                expiry_date=product.expiry_date or None,
+            )
+            session.add(batch)
+            session.commit()
+            session.refresh(batch)
+            new_product.batch_id = batch.id
+            session.add(new_product)
+            session.commit()
+            session.refresh(new_product)
+
+        return _product_to_dict(new_product, session)
 
 
 @app.put("/api/inventory/{product_id}")
@@ -1023,16 +1103,59 @@ def update_product(product_id: int, product_update: ProductUpdate):
             raise HTTPException(status_code=404, detail="Product not found")
 
         update_data = product_update.dict(exclude_unset=True)
+
+        batch_number = update_data.pop("batch_number", None)
+        manufacturing_date = update_data.pop("manufacturing_date", None)
+        expiry_date = update_data.pop("expiry_date", None)
+
         for field, value in update_data.items():
             if value is not None:
                 setattr(product, field, value)
+
+
+        if product.is_batch_tracked:
+            batch = session.get(Batch, product.batch_id) if product.batch_id else None
+            if batch is None:
+                if batch_number and batch_number.strip():
+                    new_number = batch_number.strip()
+                    existing = session.exec(select(Batch).where(Batch.batch_number == new_number)).first()
+                    if existing:
+                        raise HTTPException(status_code=400, detail="Batch number already exists")
+                else:
+                    new_number = make_unique_batch_number(session)
+                batch = Batch(
+                    batch_number=new_number,
+                    product_id=product.id,
+                    manufacturing_date=manufacturing_date or None,
+                    expiry_date=expiry_date or None,
+                )
+                session.add(batch)
+                session.commit()
+                session.refresh(batch)
+                product.batch_id = batch.id
+            else:
+                if batch_number and batch_number.strip() and batch_number.strip() != batch.batch_number:
+                    new_number = batch_number.strip()
+                    existing = session.exec(
+                        select(Batch).where(Batch.batch_number == new_number, Batch.id != batch.id)
+                    ).first()
+                    if existing:
+                        raise HTTPException(status_code=400, detail="Batch number already exists")
+                    batch.batch_number = new_number
+                if manufacturing_date is not None:
+                    batch.manufacturing_date = manufacturing_date or None
+                if expiry_date is not None:
+                    batch.expiry_date = expiry_date or None
+                session.add(batch)
+        elif product.batch_id:
+            product.batch_id = None
 
         product.updated_at = datetime.utcnow()
         session.add(product)
         session.commit()
         session.refresh(product)
 
-        return _product_to_dict(product)
+        return _product_to_dict(product, session)
 
 
 @app.delete("/api/inventory/{product_id}")

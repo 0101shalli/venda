@@ -42,11 +42,22 @@ class Product(SQLModel, table=True):
     supplier_email: Optional[str] = None
     supplier_phone: Optional[str] = None
     warehouse_location: Optional[str] = None
+    is_batch_tracked: bool = Field(default=False)
+    batch_id: Optional[int] = Field(default=None, foreign_key="batch.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     inventory_transactions: List["InventoryTransaction"] = Relationship(back_populates="product")
     sale_items: List["SaleItem"] = Relationship(back_populates="product")
+
+
+class Batch(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    batch_number: str = Field(index=True, unique=True)
+    product_id: Optional[int] = Field(default=None, foreign_key="product.id")
+    manufacturing_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    supplier_id: Optional[int] = None
 
 
 class InventoryTransaction(SQLModel, table=True):

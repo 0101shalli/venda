@@ -9,13 +9,15 @@ type InventoryStat = {
   in_stock: number;
   low_stock: number;
   out_of_stock: number;
+  expired_products: number;
+  restock: number;
   total_value: number;
   total_retail_value: number;
   categories: string[];
 };
 
 const CATEGORIES = ["All", "General", "Electronics", "Logistics", "Apparel", "Food & Beverage", "Hardware"];
-const STOCK_STATUSES = ["All", "In Stock", "Low Stock", "Out of Stock"];
+const STOCK_STATUSES = ["All", "In Stock", "Low Stock", "Out of Stock", "Expired"];
 
 // Simple fuzzy search algorithm
 function fuzzySearch(query: string, text: string): boolean {
@@ -204,11 +206,13 @@ export default function InventoryPage() {
     <div className="space-y-6">
       {/* Top Stats Bar */}
       {stats && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Total Products" value={stats.total_products} icon="📦" />
           <StatCard label="In Stock" value={stats.in_stock} icon="✓" color="emerald" />
           <StatCard label="Low Stock" value={stats.low_stock} icon="⚠" color="amber" />
           <StatCard label="Out of Stock" value={stats.out_of_stock} icon="✕" color="red" />
+          <StatCard label="Expired" value={stats.expired_products} icon="📅" color="red" />
+          <StatCard label="Restock Needed" value={stats.restock} icon="🔄" color="amber" />
           <StatCard label="Total Value" value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_value)}</>} icon="💰" />
           <StatCard label="Retail Value" value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_retail_value)}</>} icon="💵" />
         </div>

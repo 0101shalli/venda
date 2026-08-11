@@ -19,7 +19,13 @@ export type Product = {
   supplier_email: string;
   supplier_phone: string;
   warehouse_location: string;
+  is_batch_tracked?: boolean;
+  batch_id?: number | null;
+  batch_number?: string;
+  manufacturing_date?: string;
+  expiry_date?: string;
 };
+
 
 const generateBarcode = () => {
   const prefix = "750";
@@ -39,24 +45,30 @@ type ProductModalProps = {
 
 const DEFAULT_CATEGORIES = ["General", "Electronics", "Logistics", "Apparel", "Food & Beverage", "Hardware"];
 
+const EMPTY_FORM: Product = {
+  barcode: "",
+  name: "",
+  description: "",
+  category: "General",
+  cost_price: 0,
+  selling_price: 0,
+  profit_percentage: 0,
+  current_stock: 0,
+  min_stock_level: 0,
+  reorder_point: 0,
+  supplier: "",
+  supplier_email: "",
+  supplier_phone: "",
+  warehouse_location: "",
+  is_batch_tracked: false,
+  batch_number: "",
+  manufacturing_date: "",
+  expiry_date: "",
+};
+
 export default function ProductModal({ isOpen, isEditMode, product, onClose, onSave, categories = DEFAULT_CATEGORIES }: ProductModalProps) {
   const { currencySymbol } = useCurrency();
-  const [formData, setFormData] = useState<Product>({
-    barcode: "",
-    name: "",
-    description: "",
-    category: "General",
-    cost_price: 0,
-    selling_price: 0,
-    profit_percentage: 0,
-    current_stock: 0,
-    min_stock_level: 0,
-    reorder_point: 0,
-    supplier: "",
-    supplier_email: "",
-    supplier_phone: "",
-    warehouse_location: "",
-  });
+  const [formData, setFormData] = useState<Product>(EMPTY_FORM);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -84,27 +96,21 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
   useEffect(() => {
     if (isEditMode && product) {
-      setFormData(product);
+      const merged = { ...EMPTY_FORM, ...product } as Product;
+      }
+      setFormData(merged);
     } else {
-      setFormData({
-        barcode: generateBarcode(),
-        name: "",
-        description: "",
-        category: "General",
-        cost_price: 0,
-        selling_price: 0,
-        profit_percentage: 0,
-        current_stock: 0,
-        min_stock_level: 0,
-        reorder_point: 0,
-        supplier: "",
-        supplier_email: "",
-        supplier_phone: "",
-        warehouse_location: "",
-      });
+      setFormData({ ...EMPTY_FORM, barcode: generateBarcode() });
     }
     setErrors({});
+    );
   }, [isOpen, isEditMode, product]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch("/api/settings")
+      .then((res) => res.json())
+  }, [isOpen]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -161,6 +167,44 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
   const handleManualBarcodeChange = (value: string) => {
     setFormData({ ...formData, barcode: value });
+  };
+
+  const generateBatchNumber = async () => {
+    try {
+      const response = await fetch("/api/inventory/generate-batch-number");
+      if (response.ok) {
+        const data = await response.json();
+        setFormData((prev) => ({ ...prev, batch_number: data.batch_number }));
+      }
+    } catch (err) {
+      console.error("Failed to generate batch number:", err);
+    }
+  };
+
+  const handleToggleBatchTracking = (enable: boolean) => {
+    if (enable) {
+      setFormData((prev) => ({ ...prev, is_batch_tracked: true }));
+      generateBatchNumber();
+    } else {
+      setFormData({
+        ...formData,
+        is_batch_tracked: false,
+        batch_number: "",
+        manufacturing_date: "",
+        expiry_date: "",
+      });
+    }
+  };
+
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s !== "");
+    const index = steps.indexOf(String(step));
+    if (index >= 0) {
+      steps.splice(index, 1);
+    } else {
+      steps.push(String(step));
+    }
   };
 
   if (!isOpen) return null;
@@ -354,6 +398,93 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                   min="0"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Batch Tracking */}
+          <div>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Batch Tracking</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Batch Tracking</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {formData.is_batch_tracked
+                      ? "This product is tracked by batches."
+                      : "Track this product by manufacturing and expiry batches."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleToggleBatchTracking(!formData.is_batch_tracked)}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all active:scale-95 ${
+                    formData.is_batch_tracked
+                      ? "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-sky-500 dark:hover:bg-sky-600"
+                  }`}
+                >
+                  {formData.is_batch_tracked ? "Disable Batch Tracking" : "Enable Batch Tracking"}
+                </button>
+              </div>
+
+              {formData.is_batch_tracked && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label htmlFor="batch_number" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Batch Number
+                    </label>
+                    <div className="mt-1 flex gap-2">
+                      <input
+                        id="batch_number"
+                        type="text"
+                        value={formData.batch_number || ""}
+                        onChange={(e) => setFormData({ ...formData, batch_number: e.target.value })}
+                        className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                        placeholder="Auto-generated batch number"
+                      />
+                      <button
+                        type="button"
+                        onClick={generateBatchNumber}
+                        className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform"
+                        title="Generate a new batch number"
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      </button>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Generated automatically by the system when batch tracking is enabled.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label htmlFor="manufacturing_date" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Manufacturing Date
+                    </label>
+                    <input
+                      id="manufacturing_date"
+                      type="date"
+                      value={formData.manufacturing_date || ""}
+                      onChange={(e) => setFormData({ ...formData, manufacturing_date: e.target.value })}
+                      className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="expiry_date" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Expiry Date
+                    </label>
+                    <input
+                      id="expiry_date"
+                      type="date"
+                      value={formData.expiry_date || ""}
+                      onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
+                      className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
