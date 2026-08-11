@@ -3,6 +3,55 @@ import { useTheme } from "../context/ThemeContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { getAuth } from "../services/auth";
 
+function DatabaseTile({
+  icon,
+  iconBg,
+  title,
+  subtitle,
+  children,
+}: {
+  icon: React.ReactNode;
+  iconBg: string;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+      <div className="flex items-center gap-3 mb-3">
+        <div className={`h-10 w-10 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>{icon}</div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 truncate">{title}</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</p>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function TileButton({
+  className,
+  children,
+  onClick,
+  disabled,
+}: {
+  className: string;
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full rounded-lg px-3 py-2 text-sm font-semibold text-white hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 interface ProfileData {
   id: number;
   username: string;
@@ -64,6 +113,9 @@ export default function SettingsPage() {
   const [bulkProfit, setBulkProfit] = useState(0);
   const [bulkProfitSaving, setBulkProfitSaving] = useState(false);
   const [profitMessage, setProfitMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [resetBusy, setResetBusy] = useState<string | null>(null);
+  const [resetMessage, setResetMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     if (!auth?.username) return;
@@ -248,6 +300,45 @@ export default function SettingsPage() {
       setProfitMessage({ type: "error", text: err.message });
     } finally {
       setBulkProfitSaving(false);
+    }
+  };
+
+  const handleReset = async (kind: "db" | "products" | "sales") => {
+    const confirmMessages: Record<string, string> = {
+      db: "This will permanently delete ALL data (products, sales, users, and sessions) EXCEPT the admin account. This cannot be undone. Continue?",
+      products: "This will permanently delete ALL products, batches, and inventory history. This cannot be undone. Continue?",
+      sales: "This will permanently delete ALL sales records. This cannot be undone. Continue?",
+    };
+    if (!window.confirm(confirmMessages[kind])) return;
+    setResetBusy(kind);
+    setResetMessage(null);
+    try {
+      const res = await fetch(`/api/admin/reset-${kind}`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Reset failed");
+      setResetMessage({ type: "success", text: data.message || "Reset complete." });
+      setTimeout(() => setResetMessage(null), 5000);
+    } catch (err: any) {
+      setResetMessage({ type: "error", text: err.message });
+    } finally {
+      setResetBusy(null);
+    }
+  };
+
+  const handleImport = async (kind: "products" | "sales", file: File) => {
+    const label = kind === "products" ? "products" : "sales";
+    if (!window.confirm(`Importing ${label} data will add new records. Any existing products (by barcode) or sales (by invoice number) will be skipped. Continue?`)) {
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await fetch(`/api/admin/import-${kind}`, { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Import failed");
+      alert(`Imported ${data.created} ${label}, skipped ${data.skipped} existing.`);
+    } catch (err: any) {
+      alert(`Import failed: ${err.message}`);
     }
   };
 
@@ -619,44 +710,40 @@ export default function SettingsPage() {
       {auth?.role === "admin" && (
         <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">Database Management</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Export, import, or backup your store database</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Export, import, backup, or reset your store data</p>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {/* Export Database */}
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="h-10 w-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                  <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Export Database</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Download .db file</p>
-                </div>
-              </div>
-              <button
+            <DatabaseTile
+              icon={
+                <svg className="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              }
+              iconBg="bg-emerald-100 dark:bg-emerald-900/30"
+              title="Export Database"
+              subtitle="Download .db file"
+            >
+              <TileButton
                 onClick={() => window.open("/api/admin/export-db", "_blank")}
-                className="w-full rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 active:scale-95 transition-all"
+                className="bg-emerald-600 hover:bg-emerald-700"
               >
                 Export
-              </button>
-            </div>
+              </TileButton>
+            </DatabaseTile>
 
             {/* Import Database */}
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="h-10 w-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                  <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Import Database</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Upload .db file</p>
-                </div>
-              </div>
-              <label className="block w-full rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 active:scale-95 transition-all text-center cursor-pointer">
+            <DatabaseTile
+              icon={
+                <svg className="h-5 w-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+              }
+              iconBg="bg-amber-100 dark:bg-amber-900/30"
+              title="Import Database"
+              subtitle="Upload .db file"
+            >
+              <label className="block w-full rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-2 text-sm font-semibold text-white active:scale-95 transition-all text-center cursor-pointer">
                 Import
                 <input
                   type="file"
@@ -685,28 +772,156 @@ export default function SettingsPage() {
                   }}
                 />
               </label>
-            </div>
+            </DatabaseTile>
 
             {/* Backup Database */}
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="h-10 w-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                  <svg className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Backup Database</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Timestamped backup</p>
-                </div>
-              </div>
-              <button
+            <DatabaseTile
+              icon={
+                <svg className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              }
+              iconBg="bg-blue-100 dark:bg-blue-900/30"
+              title="Backup Database"
+              subtitle="Timestamped backup"
+            >
+              <TileButton
                 onClick={() => window.open("/api/admin/backup-db", "_blank")}
-                className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 active:scale-95 transition-all"
+                className="bg-blue-600 hover:bg-blue-700"
               >
                 Backup
+              </TileButton>
+            </DatabaseTile>
+
+            {/* Export Products */}
+            <DatabaseTile
+              icon={
+                <svg className="h-5 w-5 text-teal-600 dark:text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              }
+              iconBg="bg-teal-100 dark:bg-teal-900/30"
+              title="Product Data Export"
+              subtitle="Download products.json"
+            >
+              <TileButton
+                onClick={() => window.open("/api/admin/export-products", "_blank")}
+                className="bg-teal-600 hover:bg-teal-700"
+              >
+                Export Products
+              </TileButton>
+            </DatabaseTile>
+
+            {/* Import Products */}
+            <DatabaseTile
+              icon={
+                <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              }
+              iconBg="bg-orange-100 dark:bg-orange-900/30"
+              title="Product Data Import"
+              subtitle="Upload products.json"
+            >
+              <label className="block w-full rounded-lg bg-orange-600 hover:bg-orange-700 px-3 py-2 text-sm font-semibold text-white active:scale-95 transition-all text-center cursor-pointer">
+                Import Products
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImport("products", file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </DatabaseTile>
+
+            {/* Export Sales */}
+            <DatabaseTile
+              icon={
+                <svg className="h-5 w-5 text-violet-600 dark:text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+              }
+              iconBg="bg-violet-100 dark:bg-violet-900/30"
+              title="Sales Data Export"
+              subtitle="Download sales.json"
+            >
+              <TileButton
+                onClick={() => window.open("/api/admin/export-sales", "_blank")}
+                className="bg-violet-600 hover:bg-violet-700"
+              >
+                Export Sales
+              </TileButton>
+            </DatabaseTile>
+
+            {/* Import Sales */}
+            <DatabaseTile
+              icon={
+                <svg className="h-5 w-5 text-rose-600 dark:text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+              }
+              iconBg="bg-rose-100 dark:bg-rose-900/30"
+              title="Sales Data Import"
+              subtitle="Upload sales.json"
+            >
+              <label className="block w-full rounded-lg bg-rose-600 hover:bg-rose-700 px-3 py-2 text-sm font-semibold text-white active:scale-95 transition-all text-center cursor-pointer">
+                Import Sales
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImport("sales", file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </DatabaseTile>
+          </div>
+
+          {/* Danger Zone */}
+          <div className="mt-6 p-4 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/60">
+            <h3 className="text-sm font-semibold text-rose-700 dark:text-rose-400 mb-1">Danger Zone</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              These actions permanently delete data and cannot be undone. Use with caution.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => handleReset("db")}
+                disabled={resetBusy !== null}
+                className="rounded-lg bg-rose-600 hover:bg-rose-700 px-4 py-2 text-sm font-semibold text-white active:scale-95 transition-all disabled:opacity-50"
+              >
+                {resetBusy === "db" ? "Resetting..." : "Database Reset"}
+              </button>
+              <button
+                onClick={() => handleReset("products")}
+                disabled={resetBusy !== null}
+                className="rounded-lg bg-orange-500 hover:bg-orange-600 px-4 py-2 text-sm font-semibold text-white active:scale-95 transition-all disabled:opacity-50"
+              >
+                {resetBusy === "products" ? "Resetting..." : "Product Reset"}
+              </button>
+              <button
+                onClick={() => handleReset("sales")}
+                disabled={resetBusy !== null}
+                className="rounded-lg bg-amber-500 hover:bg-amber-600 px-4 py-2 text-sm font-semibold text-white active:scale-95 transition-all disabled:opacity-50"
+              >
+                {resetBusy === "sales" ? "Resetting..." : "Sales Reset"}
               </button>
             </div>
+            {resetMessage && (
+              <div className={`mt-4 p-3 rounded-lg text-sm font-medium border ${
+                resetMessage.type === "success"
+                  ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                  : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800"
+              }`}>
+                {resetMessage.type === "success" ? "✓" : "✗"} {resetMessage.text}
+              </div>
+            )}
           </div>
         </div>
       )}

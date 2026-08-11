@@ -1340,7 +1340,7 @@ async def import_database(file: UploadFile = File(...)):
     return {"message": "Database imported successfully. Please restart the server."}
 
 
-@app.post("/api/admin/backup-db")
+@app.api_route("/api/admin/backup-db", methods=["GET", "POST"])
 def backup_database():
     db_path = _get_db_file_path()
     if not os.path.exists(db_path):
@@ -1360,6 +1360,355 @@ def backup_database():
         media_type="application/octet-stream",
         headers={"Content-Disposition": f"attachment; filename={backup_filename}"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Data reset endpoints (admin only)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/admin/reset-db")
+def reset_database():
+    with get_session() as session:
+        sale_items = session.exec(select(SaleItem)).all()
+        for obj in sale_items:
+            session.delete(obj)
+
+        sales = session.exec(select(Sale)).all()
+        for obj in sales:
+            session.delete(obj)
+
+        transactions = session.exec(select(InventoryTransaction)).all()
+        for obj in transactions:
+            session.delete(obj)
+
+        batches = session.exec(select(Batch)).all()
+        for obj in batches:
+            session.delete(obj)
+
+        products = session.exec(select(Product)).all()
+        for obj in products:
+            session.delete(obj)
+
+        user_sessions = session.exec(select(UserSession)).all()
+        for obj in user_sessions:
+            session.delete(obj)
+
+        users = session.exec(select(User)).all()
+        deleted_users = 0
+        for obj in users:
+            if obj.username == "admin":
+                continue
+            session.delete(obj)
+            deleted_users += 1
+
+        session.commit()
+
+        return {
+            "message": "Database reset complete. All data deleted except the admin account.",
+            "deleted": {
+                "products": len(products),
+                "sales": len(sales),
+                "users": deleted_users,
+            },
+        }
+
+
+@app.post("/api/admin/reset-products")
+def reset_products():
+    with get_session() as session:
+        transactions = session.exec(select(InventoryTransaction)).all()
+        for obj in transactions:
+            session.delete(obj)
+
+        batches = session.exec(select(Batch)).all()
+        for obj in batches:
+            session.delete(obj)
+
+        products = session.exec(select(Product)).all()
+        for obj in products:
+            session.delete(obj)
+
+        session.commit()
+
+        return {
+            "message": "All products, batches, and inventory history deleted.",
+            "deleted": {"products": len(products)},
+        }
+
+
+@app.post("/api/admin/reset-sales")
+def reset_sales():
+    with get_session() as session:
+        sale_items = session.exec(select(SaleItem)).all()
+        for obj in sale_items:
+            product = session.get(Product, obj.product_id)
+            if product:
+                product.current_stock += obj.quantity
+                session.add(product)
+            session.delete(obj)
+
+        sales = session.exec(select(Sale)).all()
+        for obj in sales:
+            session.delete(obj)
+
+        sale_transactions = session.exec(
+            select(InventoryTransaction).where(InventoryTransaction.type == "sale")
+        ).all()
+        for obj in sale_transactions:
+            session.delete(obj)
+
+        session.commit()
+
+        return {
+            "message": "All sales records deleted and stock restored.",
+            "deleted": {"sales": len(sales)},
+        }
+
+
+# ---------------------------------------------------------------------------
+# Product / Sales data export & import endpoints (admin only)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/export-products")
+def export_products():
+    with get_session() as session:
+        products = session.exec(select(Product).order_by(Product.id)).all()
+        data = []
+        for p in products:
+            item = _product_to_dict(p, session)
+            item.pop("supplier_id", None)
+            data.append(item)
+
+        return Response(
+            content=json.dumps(data, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=products_export.json"},
+        )
+
+
+@app.get("/api/admin/export-sales")
+def export_sales():
+    with get_session() as session:
+        sales = session.exec(select(Sale).order_by(Sale.id)).all()
+        data = []
+        for sale in sales:
+            user = session.get(User, sale.cashier_id)
+            items = session.exec(select(SaleItem).where(SaleItem.sale_id == sale.id)).all()
+            sale_items = []
+            for item in items:
+                product = session.get(Product, item.product_id)
+                sale_items.append({
+                    "product_id": item.product_id,
+                    "sku": product.barcode if product else "",
+                    "name": product.name if product else "",
+                    "unit_price": item.unit_price,
+                    "quantity": item.quantity,
+                    "total_price": round(item.unit_price * item.quantity, 2),
+                })
+            data.append({
+                "invoice_number": sale.invoice_number,
+                "timestamp": sale.timestamp.isoformat() if sale.timestamp else "",
+                "cashier_id": sale.cashier_id,
+                "cashier_name": user.username if user else "",
+                "payment_method": sale.payment_method,
+                "total_amount": sale.total_amount,
+                "items": sale_items,
+            })
+
+        return Response(
+            content=json.dumps(data, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=sales_export.json"},
+        )
+
+
+def _parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+@app.post("/api/admin/import-products")
+async def import_products(file: UploadFile = File(...)):
+    content = await file.read()
+    try:
+        data = json.loads(content)
+        if isinstance(data, dict):
+            data = data.get("products", data)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+
+    created = 0
+    skipped = 0
+
+    with get_session() as session:
+        for item in data:
+            if not isinstance(item, dict):
+                skipped += 1
+                continue
+
+            barcode = str(item.get("barcode", "")).strip()
+            if not barcode:
+                skipped += 1
+                continue
+
+            existing = session.exec(select(Product).where(Product.barcode == barcode)).first()
+            if existing:
+                skipped += 1
+                continue
+
+            try:
+                cost_price = float(item.get("cost_price") or 0)
+                selling_price = float(item.get("selling_price") or 0)
+                profit_percentage = float(item.get("profit_percentage") or 0)
+                current_stock = int(item.get("current_stock") or 0)
+                min_stock_level = int(item.get("min_stock_level") or 0)
+                reorder_point = int(item.get("reorder_point") or 0)
+            except (ValueError, TypeError):
+                skipped += 1
+                continue
+
+            product = Product(
+                barcode=barcode,
+                name=str(item.get("name") or "Unnamed Product").strip() or "Unnamed Product",
+                description=item.get("description"),
+                category=str(item.get("category") or "General"),
+                cost_price=cost_price,
+                selling_price=selling_price,
+                profit_percentage=profit_percentage,
+                current_stock=current_stock,
+                min_stock_level=min_stock_level,
+                reorder_point=reorder_point,
+                supplier=item.get("supplier"),
+                supplier_email=item.get("supplier_email"),
+                supplier_phone=item.get("supplier_phone"),
+                warehouse_location=item.get("warehouse_location"),
+                is_batch_tracked=_parse_bool(item.get("is_batch_tracked")),
+                bargain_enabled=_parse_bool(item.get("bargain_enabled")),
+                min_selling_price=item.get("min_selling_price"),
+                bargain_steps=",".join(str(s) for s in (item.get("bargain_steps") or [])),
+            )
+            session.add(product)
+            session.flush()
+            created += 1
+
+            if product.is_batch_tracked and item.get("batch_number"):
+                batch = Batch(
+                    batch_number=str(item.get("batch_number")),
+                    product_id=product.id,
+                    manufacturing_date=item.get("manufacturing_date"),
+                    expiry_date=item.get("expiry_date"),
+                )
+                session.add(batch)
+                session.flush()
+                product.batch_id = batch.id
+                session.add(product)
+
+        session.commit()
+
+    return {"message": f"Imported {created} products, skipped {skipped}.", "created": created, "skipped": skipped}
+
+
+@app.post("/api/admin/import-sales")
+async def import_sales(file: UploadFile = File(...)):
+    content = await file.read()
+    try:
+        data = json.loads(content)
+        if isinstance(data, dict):
+            data = data.get("sales", data)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+
+    created = 0
+    skipped = 0
+
+    with get_session() as session:
+        for sale_data in data:
+            if not isinstance(sale_data, dict):
+                skipped += 1
+                continue
+
+            invoice = str(sale_data.get("invoice_number", "")).strip()
+            if not invoice:
+                skipped += 1
+                continue
+
+            existing = session.exec(select(Sale).where(Sale.invoice_number == invoice)).first()
+            if existing:
+                skipped += 1
+                continue
+
+            try:
+                total_amount = float(sale_data.get("total_amount") or 0)
+                payment_method = str(sale_data.get("payment_method") or "Cash")
+                cashier_id = int(sale_data.get("cashier_id") or 1)
+            except (ValueError, TypeError):
+                skipped += 1
+                continue
+
+            timestamp = None
+            ts = sale_data.get("timestamp")
+            if ts:
+                try:
+                    timestamp = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).replace(tzinfo=None)
+                except Exception:
+                    timestamp = None
+
+            sale = Sale(
+                invoice_number=invoice,
+                total_amount=total_amount,
+                payment_method=payment_method,
+                cashier_id=cashier_id,
+                timestamp=timestamp,
+            )
+            session.add(sale)
+            session.flush()
+            created += 1
+
+            for item_data in sale_data.get("items") or []:
+                if not isinstance(item_data, dict):
+                    continue
+
+                product = None
+                sku = str(item_data.get("sku") or "").strip()
+                if sku:
+                    product = session.exec(select(Product).where(Product.barcode == sku)).first()
+                if not product and item_data.get("product_id"):
+                    try:
+                        product = session.get(Product, int(item_data["product_id"]))
+                    except (ValueError, TypeError):
+                        product = None
+                if not product:
+                    continue
+
+                try:
+                    quantity = int(item_data.get("quantity") or 0)
+                    unit_price = float(item_data.get("unit_price") or 0)
+                except (ValueError, TypeError):
+                    continue
+                if quantity <= 0:
+                    continue
+
+                session.add(SaleItem(
+                    sale_id=sale.id,
+                    product_id=product.id,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                ))
+
+                product.current_stock = max(0, product.current_stock - quantity)
+                session.add(product)
+
+                session.add(InventoryTransaction(
+                    product_id=product.id,
+                    quantity_changed=-quantity,
+                    type="sale",
+                    user_id=cashier_id,
+                ))
+
+        session.commit()
+
+    return {"message": f"Imported {created} sales, skipped {skipped}.", "created": created, "skipped": skipped}
 
 
 # Mount static frontend AFTER all API routes so /api/* routes always take priority
