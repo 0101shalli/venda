@@ -648,6 +648,11 @@ export default function UserManagementPage() {
       {(auth?.role === "admin" || auth?.role === "manager1") && (
         <TimeTracking users={users} />
       )}
+
+      {/* Activity Log Section */}
+      {auth?.role === "admin" && (
+        <ActivityLog users={users} />
+      )}
     </div>
   );
 }
@@ -831,6 +836,205 @@ function TimeTracking({ users }: { users: User[] }) {
             </span>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+interface ActivityRecord {
+  id: number;
+  username: string;
+  action: string;
+  details: string;
+  timestamp: string;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  LOGIN: "Login",
+  LOGOUT: "Logout",
+  LOGIN_FAILED: "Failed Login",
+  CREATE_USER: "User Created",
+  UPDATE_USER: "User Updated",
+  DELETE_USER: "User Deleted",
+  RESET_PASSWORD: "Password Reset",
+  CREATE_PRODUCT: "Product Created",
+  UPDATE_PRODUCT: "Product Updated",
+  DELETE_PRODUCT: "Product Deleted",
+  STOCK_ADJUST: "Stock Adjustment",
+  ADJUST_STOCK: "Stock Adjustment",
+  CREATE_SALE: "Sale",
+  IMPORT_PRODUCTS: "Products Imported",
+  IMPORT_SALES: "Sales Imported",
+  IMPORT_DB: "Database Imported",
+  BACKUP_DB: "Database Backup",
+  RESET_DB: "Database Reset",
+  SETTINGS_UPDATE: "Settings Updated",
+  UPDATE_SETTINGS: "Settings Updated",
+  UPDATE_PROFILE: "Profile Updated",
+  BULK_UPDATE_PROFIT: "Bulk Profit Update",
+  CHANGE_PASSWORD: "Password Changed",
+};
+
+const ACTION_STYLES: Record<string, string> = {
+  LOGIN: "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400",
+  LOGOUT: "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400",
+  LOGIN_FAILED: "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400",
+  CREATE_SALE: "bg-sky-50 dark:bg-sky-950/30 text-sky-600 dark:text-sky-400",
+  RESET_DB: "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400",
+  DELETE_USER: "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400",
+  DELETE_PRODUCT: "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400",
+};
+
+function ActivityLog({ users }: { users: User[] }) {
+  const [logs, setLogs] = useState<ActivityRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | "">("");
+  const [duration, setDuration] = useState("24h");
+  const [exporting, setExporting] = useState(false);
+
+  const DURATIONS: { value: string; label: string; hours: number }[] = [
+    { value: "1h", label: "Last 1 Hour", hours: 1 },
+    { value: "24h", label: "Last 24 Hours", hours: 24 },
+    { value: "1w", label: "Last 1 Week", hours: 168 },
+    { value: "1m", label: "Last 1 Month", hours: 720 },
+    { value: "1y", label: "Last 1 Year", hours: 8760 },
+    { value: "all", label: "All Time", hours: 0 },
+  ];
+
+  const selectedDuration = DURATIONS.find((d) => d.value === duration) || DURATIONS[1];
+
+  const queryParams = () => {
+    const params = new URLSearchParams();
+    if (selectedUserId) params.set("user_id", String(selectedUserId));
+    if (selectedDuration.hours > 0) params.set("hours", String(selectedDuration.hours));
+    return params.toString();
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/activity-logs?${queryParams()}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load activity log");
+        return res.json();
+      })
+      .then((data) => {
+        setLogs(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedUserId, duration]);
+
+  const formatDT = (iso: string | null) => {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleString();
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/activity-logs/export?${queryParams()}`);
+      if (!res.ok) throw new Error("Failed to generate PDF report");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "system_activity_log.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert("Export failed: " + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">System Activity Log</h2>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="rounded-lg bg-rose-600 hover:bg-rose-700 px-4 py-2 text-xs font-semibold text-white active:scale-95 transition-transform shadow-sm disabled:opacity-50"
+        >
+          {exporting ? "Generating..." : "⬇ Export PDF Report"}
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Recorded logins and activities across the store</p>
+
+      {/* Filter form */}
+      <div className="flex flex-wrap gap-4 items-end mb-6 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">User</label>
+          <select
+            value={selectedUserId}
+            onChange={(e) => setSelectedUserId(e.target.value === "" ? "" : Number(e.target.value))}
+            className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+          >
+            <option value="">All users</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.full_name || u.username} ({u.role})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Time Range</label>
+          <select
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+            className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+          >
+            {DURATIONS.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <div className="h-8 w-8 animate-spin rounded-full border-3 border-slate-200 border-t-sky-500"></div>
+        </div>
+      ) : error ? (
+        <p className="text-sm text-rose-500 dark:text-rose-400 text-center py-8">Error: {error}</p>
+      ) : logs.length === 0 ? (
+        <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-8">No activity recorded for this filter</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+              <tr className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <th className="px-4 py-3">Time</th>
+                <th className="px-4 py-3">User</th>
+                <th className="px-4 py-3">Action</th>
+                <th className="px-4 py-3">Details</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+              {logs.map((log) => (
+                <tr key={log.id} className="text-sm text-slate-700 dark:text-slate-300">
+                  <td className="px-4 py-3 whitespace-nowrap text-slate-500 dark:text-slate-400">{formatDT(log.timestamp)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-medium">@{log.username || "unknown"}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={`inline-block text-[10px] uppercase font-bold tracking-wide rounded-full px-2.5 py-0.5 ${ACTION_STYLES[log.action] || "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}>
+                      {ACTION_LABELS[log.action] || log.action}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{log.details || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
