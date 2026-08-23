@@ -97,6 +97,8 @@ export default function SettingsPage() {
 
   const [bargainEnabled, setBargainEnabled] = useState(false);
 
+  const [systemLogsEnabled, setSystemLogsEnabled] = useState(true);
+
   const [printerType, setPrinterType] = useState("file");
   const [printerDevice, setPrinterDevice] = useState("");
   const [printerSaving, setPrinterSaving] = useState(false);
@@ -152,6 +154,7 @@ export default function SettingsPage() {
         setCardDisabled(data.card_button_disabled === "true");
         setBarcodeScannerDisabled(data.barcode_scanner_disabled === "true");
         setBargainEnabled(data.bargain_enabled === "true");
+        setSystemLogsEnabled(data.system_logs_enabled === "true");
         setPrinterType(data.printer_type || "file");
         setPrinterDevice(data.printer_device || "");
         setStoreName(data.store_name || "");
@@ -220,6 +223,26 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error("Failed to update");
       setBargainEnabled(newValue);
       setSaveMessage({ type: "success", text: "Bargain feature setting updated!" });
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (err: any) {
+      setSaveMessage({ type: "error", text: err.message });
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const handleSystemLogsToggle = async () => {
+    setConfigSaving(true);
+    const newValue = !systemLogsEnabled;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ system_logs_enabled: String(newValue) }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      setSystemLogsEnabled(newValue);
+      setSaveMessage({ type: "success", text: "System logs setting updated!" });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -549,6 +572,28 @@ export default function SettingsPage() {
                 <span
                   className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
                     bargainEnabled ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">System Logs</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Record login and activity events in the system log</p>
+              </div>
+              <button
+                onClick={handleSystemLogsToggle}
+                disabled={configSaving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  systemLogsEnabled ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
+                    systemLogsEnabled ? "translate-x-7" : "translate-x-1"
                   }`}
                 />
               </button>
