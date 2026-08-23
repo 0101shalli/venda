@@ -111,3 +111,14 @@ class UserSession(SQLModel, table=True):
     login_time: datetime = Field(default_factory=datetime.utcnow)
     logout_time: Optional[datetime] = None
     duration_seconds: Optional[float] = None
+
+
+class ActivityLog(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    username: str = Field(index=True)
+    action: str
+    details: Optional[str] = None
+    entity_type: Optional[str] = None
+    entity_id: Optional[int] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)

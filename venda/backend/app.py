@@ -11,7 +11,7 @@ except Exception:
     webview = None
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Response, Query, UploadFile, File
+from fastapi import FastAPI, HTTPException, Response, Query, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,11 +21,11 @@ from sqlmodel import select, text
 
 try:
     from .database import create_db_and_tables, get_session, engine
-    from .models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
+    from .models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog
     from .utils import print_receipt_with_timeout
 except (ImportError, SystemError):
     from database import create_db_and_tables, get_session, engine
-    from models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession
+    from models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog
     from utils import print_receipt_with_timeout
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -80,6 +80,33 @@ def _set_setting(session, key: str, value: str) -> None:
         session.add(row)
     else:
         session.add(SystemSetting(key=key, value=value))
+
+
+def _logs_enabled(session) -> bool:
+    return (_get_setting(session, "system_logs_enabled") or "true").lower() == "true"
+
+
+def _request_actor(request: Request, session, fallback: str = "") -> tuple[str, int | None]:
+    """Return (username, user_id) for the acting user from the X-Username header."""
+    username = (request.headers.get("X-Username") or "").strip() or fallback
+    if not username:
+        return "", None
+    user = session.exec(select(User).where(User.username == username)).first()
+    if not user:
+        return username, None
+    return user.username, user.id
+
+
+def log_activity(username: str, user_id: int | None, action: str, details: str = "") -> None:
+    """Record an activity entry if system logs are enabled."""
+    try:
+        with get_session() as session:
+            if not _logs_enabled(session):
+                return
+            session.add(ActivityLog(username=username or "system", user_id=user_id, action=action, details=details))
+            session.commit()
+    except Exception:
+        pass
 
 
 def _product_to_dict(p: Product, session=None) -> dict:
@@ -174,6 +201,7 @@ def startup_event() -> None:
             "printer_type": "file",
             "printer_device": "",
             "bargain_enabled": "false",
+            "system_logs_enabled": "true",
         }
         for key, value in defaults.items():
             existing = session.exec(select(SystemSetting).where(SystemSetting.key == key)).first()
@@ -186,16 +214,19 @@ def startup_event() -> None:
 
 
 @app.post("/api/login", response_model=LoginResponse)
-def login(request: LoginRequest, response: Response):
+def login(request: Request, request_body: LoginRequest, response: Response):
     with get_session() as session:
-        user = session.exec(select(User).where(User.username == request.username)).first()
-        if not user or not verify_password(request.password, user.password_hash):
+        user = session.exec(select(User).where(User.username == request_body.username)).first()
+        if not user or not verify_password(request_body.password, user.password_hash):
+            log_activity(request_body.username, None, "LOGIN", "Login failed: invalid credentials")
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         if user.disabled:
+            log_activity(user.username, user.id, "LOGIN", "Login failed: account disabled")
             raise HTTPException(status_code=403, detail="Account is disabled")
 
         if user.is_first_login:
+            log_activity(user.username, user.id, "LOGIN", "Login (first login)")
             response.status_code = 403
             return {"username": user.username, "role": user.role, "is_first_login": True}
 
@@ -205,6 +236,7 @@ def login(request: LoginRequest, response: Response):
         session.commit()
         session.refresh(user_session)
 
+        log_activity(user.username, user.id, "LOGIN", "User logged in")
         return {"username": user.username, "role": user.role, "is_first_login": False, "session_id": user_session.id}
 
 
@@ -288,8 +320,9 @@ class ChangePasswordRequest(BaseModel):
 
 
 @app.post("/api/logout")
-def logout(body: dict):
+def logout(request: Request, body: dict):
     session_id = body.get("session_id")
+    username = (request.headers.get("X-Username") or "").strip()
     if session_id:
         with get_session() as db_session:
             user_session = db_session.get(UserSession, session_id)
@@ -300,6 +333,10 @@ def logout(body: dict):
                     user_session.duration_seconds = round(delta, 2)
                 db_session.add(user_session)
                 db_session.commit()
+                if not username:
+                    username = user_session.username
+    if username:
+        log_activity(username, None, "LOGOUT", "User logged out")
     return {"message": "Logged out"}
 
 
@@ -340,17 +377,19 @@ def get_user_sessions(user_id: int):
 
 
 @app.post("/api/change-password")
-def change_password(request: ChangePasswordRequest):
-    if not request.password or len(request.password) < 6:
+def change_password(request: Request, request_body: ChangePasswordRequest):
+    if not request_body.password or len(request_body.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
     with get_session() as session:
         admin = session.exec(select(User).where(User.username == "admin")).first()
         if admin:
-            admin.password_hash = get_password_hash(request.password)
+            admin.password_hash = get_password_hash(request_body.password)
             admin.is_first_login = False
             session.add(admin)
             session.commit()
+            username, user_id = _request_actor(request, session, "admin")
+            log_activity(username, user_id, "CHANGE_PASSWORD", "Password changed")
             return {"message": "Password updated successfully"}
 
     raise HTTPException(status_code=500, detail="Unable to update password")
@@ -372,6 +411,7 @@ def get_settings():
         printer_type = _get_setting(session, "printer_type") or "file"
         printer_device = _get_setting(session, "printer_device") or ""
         bargain_enabled = _get_setting(session, "bargain_enabled") or "false"
+        system_logs_enabled = _get_setting(session, "system_logs_enabled") or "true"
     return {
         "currency": currency,
         "receipt_printing": receipt_printing,
@@ -382,11 +422,12 @@ def get_settings():
         "printer_type": printer_type,
         "printer_device": printer_device,
         "bargain_enabled": bargain_enabled,
+        "system_logs_enabled": system_logs_enabled,
     }
 
 
 @app.put("/api/settings")
-def update_settings(body: dict):
+def update_settings(request: Request, body: dict):
     with get_session() as session:
         if "currency" in body:
             _set_setting(session, "currency", str(body["currency"]))
@@ -406,7 +447,11 @@ def update_settings(body: dict):
             _set_setting(session, "printer_device", str(body["printer_device"]))
         if "bargain_enabled" in body:
             _set_setting(session, "bargain_enabled", str(body["bargain_enabled"]))
+        if "system_logs_enabled" in body:
+            _set_setting(session, "system_logs_enabled", str(body["system_logs_enabled"]))
         session.commit()
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "UPDATE_SETTINGS", "Updated system settings: " + ", ".join(body.keys()))
     return {"message": "Settings updated"}
 
 
@@ -418,10 +463,12 @@ def get_profit_default():
 
 
 @app.put("/api/settings/profit-default")
-def update_profit_default(body: dict):
+def update_profit_default(request: Request, body: dict):
     with get_session() as session:
         _set_setting(session, "default_profit_percentage", str(body.get("value", 0)))
         session.commit()
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "UPDATE_SETTINGS", f"Updated default profit percentage to {body.get('value', 0)}%")
     return {"message": "Default profit percentage updated"}
 
 
@@ -451,7 +498,7 @@ def get_profile(username: str = Query(...)):
 
 
 @app.put("/api/profile")
-def update_profile(username: str = Query(...), body: dict = None):
+def update_profile(request: Request, username: str = Query(...), body: dict = None):
     if body is None:
         body = {}
     with get_session() as session:
@@ -464,6 +511,8 @@ def update_profile(username: str = Query(...), body: dict = None):
                 setattr(user, field, body[field])
         session.add(user)
         session.commit()
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "UPDATE_PROFILE", f"Updated profile of '{user.username}'")
         return {"message": "Profile updated"}
 
 
@@ -502,7 +551,7 @@ def get_users():
 
 
 @app.post("/api/users")
-def create_user(body: dict):
+def create_user(request: Request, body: dict):
     username = body.get("username", "").strip()
     password = body.get("password", "")
     role = body.get("role", "cashier")
@@ -546,6 +595,8 @@ def create_user(body: dict):
         session.add(user)
         session.commit()
         session.refresh(user)
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "CREATE_USER", f"Created user '{user.username}' (role: {user.role})")
         return {
             "id": user.id, "username": user.username, "role": user.role,
             "message": "User created successfully",
@@ -553,7 +604,7 @@ def create_user(body: dict):
 
 
 @app.put("/api/users/{user_id}")
-def update_user(user_id: int, body: dict):
+def update_user(request: Request, user_id: int, body: dict):
     with get_session() as session:
         user = session.exec(select(User).where(User.id == user_id)).first()
         if not user:
@@ -588,22 +639,31 @@ def update_user(user_id: int, body: dict):
 
         session.add(user)
         session.commit()
+        actor, actor_id = _request_actor(request, session)
+        details = f"Updated user '{user.username}'"
+        if "role" in body:
+            details += f" (role: {user.role})"
+        if "disabled" in body:
+            details += f" (disabled: {user.disabled})"
+        log_activity(actor, actor_id, "UPDATE_USER", details)
         return {"message": "User updated successfully"}
 
 
 @app.delete("/api/users/{user_id}")
-def delete_user(user_id: int):
+def delete_user(request: Request, user_id: int):
     with get_session() as session:
         user = session.exec(select(User).where(User.id == user_id)).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         session.delete(user)
         session.commit()
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "DELETE_USER", f"Deleted user '{user.username}'")
         return {"message": "User deleted successfully"}
 
 
 @app.post("/api/users/{user_id}/reset-password")
-def reset_user_password(user_id: int, body: dict):
+def reset_user_password(request: Request, user_id: int, body: dict):
     password = body.get("password", "")
     if not password or len(password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
@@ -616,6 +676,8 @@ def reset_user_password(user_id: int, body: dict):
         user.is_first_login = False
         session.add(user)
         session.commit()
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "RESET_PASSWORD", f"Reset password for '{user.username}'")
         return {"message": "Password reset successfully"}
 
 
@@ -657,7 +719,7 @@ def get_sales():
 
 
 @app.post("/api/sales")
-def create_sale(body: dict):
+def create_sale(request: Request, body: dict):
     payment_method = body.get("payment_method", "Cash")
     items = body.get("items", [])
     cashier_username = body.get("cashier_username", "")
@@ -778,6 +840,13 @@ def create_sale(body: dict):
         if receipt_text:
             print_status = print_receipt_with_timeout(receipt_text, printer_type, printer_device)
 
+        actor, actor_id = _request_actor(request, session, cashier.username if cashier else "")
+        item_summary = ", ".join(f"{d['name']} x{d['qty']}" for d in item_details)
+        log_activity(
+            actor, actor_id, "CREATE_SALE",
+            f"Sale {invoice} ({payment_method}) totaling {currency} {total:.2f}: {item_summary}",
+        )
+
         return {
             "id": sale.id,
             "invoice_number": invoice,
@@ -877,7 +946,7 @@ def get_product_bargain(product_id: int):
 
 
 @app.put("/api/products/{product_id}/profit")
-def update_product_profit(product_id: int, body: dict):
+def update_product_profit(request: Request, product_id: int, body: dict):
     profit_pct = body.get("profit_percentage", 0)
     with get_session() as session:
         product = session.exec(select(Product).where(Product.id == product_id)).first()
@@ -889,6 +958,8 @@ def update_product_profit(product_id: int, body: dict):
         session.add(product)
         session.commit()
         session.refresh(product)
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "UPDATE_PRODUCT", f"Updated profit of '{product.name}' to {profit_pct}%")
         return {
             "id": product.id,
             "name": product.name,
@@ -898,7 +969,7 @@ def update_product_profit(product_id: int, body: dict):
 
 
 @app.put("/api/products/bulk-profit")
-def bulk_update_profit(body: dict):
+def bulk_update_profit(request: Request, body: dict):
     profit_pct = body.get("profit_percentage", 0)
     with get_session() as session:
         products = session.exec(select(Product)).all()
@@ -910,6 +981,8 @@ def bulk_update_profit(body: dict):
             session.add(p)
             count += 1
         session.commit()
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "BULK_UPDATE_PROFIT", f"Updated profit percentage to {profit_pct}% for {count} products")
         return {"message": f"Updated profit percentage for {count} products", "updated": count}
 
 
@@ -1132,7 +1205,7 @@ def inventory_stats():
 
 
 @app.post("/api/inventory")
-def create_product(product: ProductCreate):
+def create_product(request: Request, product: ProductCreate):
     with get_session() as session:
         barcode = product.barcode.strip() if product.barcode else ""
         if not barcode:
@@ -1191,11 +1264,13 @@ def create_product(product: ProductCreate):
             session.commit()
             session.refresh(new_product)
 
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "CREATE_PRODUCT", f"Created product '{new_product.name}' (barcode: {barcode})")
         return _product_to_dict(new_product, session)
 
 
 @app.put("/api/inventory/{product_id}")
-def update_product(product_id: int, product_update: ProductUpdate):
+def update_product(request: Request, product_id: int, product_update: ProductUpdate):
     with get_session() as session:
         product = session.exec(select(Product).where(Product.id == product_id)).first()
         if not product:
@@ -1260,11 +1335,13 @@ def update_product(product_id: int, product_update: ProductUpdate):
         session.commit()
         session.refresh(product)
 
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "UPDATE_PRODUCT", f"Updated product '{product.name}'")
         return _product_to_dict(product, session)
 
 
 @app.delete("/api/inventory/{product_id}")
-def delete_product(product_id: int):
+def delete_product(request: Request, product_id: int):
     with get_session() as session:
         product = session.exec(select(Product).where(Product.id == product_id)).first()
         if not product:
@@ -1272,6 +1349,8 @@ def delete_product(product_id: int):
 
         session.delete(product)
         session.commit()
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "DELETE_PRODUCT", f"Deleted product '{product.name}'")
 
         return {"message": "Product deleted successfully"}
 
@@ -1282,7 +1361,7 @@ class StockAdjustmentRequest(BaseModel):
 
 
 @app.post("/api/inventory/{product_id}/stock")
-def adjust_stock(product_id: int, adjustment: StockAdjustmentRequest):
+def adjust_stock(request: Request, product_id: int, adjustment: StockAdjustmentRequest):
     with get_session() as session:
         product = session.exec(select(Product).where(Product.id == product_id)).first()
         if not product:
@@ -1302,6 +1381,12 @@ def adjust_stock(product_id: int, adjustment: StockAdjustmentRequest):
         session.add(product)
         session.add(transaction)
         session.commit()
+
+        actor, actor_id = _request_actor(request, session)
+        log_activity(
+            actor, actor_id, "ADJUST_STOCK",
+            f"Adjusted stock for '{product.name}' by {adjustment.quantity_change} (type: {adjustment.type})",
+        )
 
         return {
             "id": product.id,
@@ -1337,7 +1422,7 @@ def export_database():
 
 
 @app.post("/api/admin/import-db")
-async def import_database(file: UploadFile = File(...)):
+async def import_database(request: Request, file: UploadFile = File(...)):
     db_path = _get_db_file_path()
     backup_path = db_path + ".pre_import_backup"
     if os.path.exists(db_path):
@@ -1351,11 +1436,17 @@ async def import_database(file: UploadFile = File(...)):
             shutil.copy2(backup_path, db_path)
         raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
 
+    try:
+        with get_session() as session:
+            actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "IMPORT_DB", "Database file imported (replaces current database)")
+    except Exception:
+        log_activity("system", None, "IMPORT_DB", "Database file imported (replaces current database)")
     return {"message": "Database imported successfully. Please restart the server."}
 
 
 @app.api_route("/api/admin/backup-db", methods=["GET", "POST"])
-def backup_database():
+def backup_database(request: Request):
     db_path = _get_db_file_path()
     if not os.path.exists(db_path):
         raise HTTPException(status_code=404, detail="Database file not found")
@@ -1364,6 +1455,10 @@ def backup_database():
     backup_filename = f"store_data_{timestamp}.db"
     backup_path = os.path.join(os.path.dirname(db_path), backup_filename)
     shutil.copy2(db_path, backup_path)
+
+    with get_session() as session:
+        actor, actor_id = _request_actor(request, session)
+    log_activity(actor, actor_id, "BACKUP_DB", f"Database backup created ({backup_filename})")
 
     def iter_file():
         with open(backup_path, "rb") as f:
@@ -1381,7 +1476,7 @@ def backup_database():
 # ---------------------------------------------------------------------------
 
 @app.post("/api/admin/reset-db")
-def reset_database():
+def reset_database(request: Request):
     with get_session() as session:
         sale_items = session.exec(select(SaleItem)).all()
         for obj in sale_items:
@@ -1417,6 +1512,9 @@ def reset_database():
 
         session.commit()
 
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "RESET_DB", f"Full database reset (products: {len(products)}, sales: {len(sales)}, users: {deleted_users})")
+
         return {
             "message": "Database reset complete. All data deleted except the admin account.",
             "deleted": {
@@ -1428,7 +1526,7 @@ def reset_database():
 
 
 @app.post("/api/admin/reset-products")
-def reset_products():
+def reset_products(request: Request):
     with get_session() as session:
         transactions = session.exec(select(InventoryTransaction)).all()
         for obj in transactions:
@@ -1444,6 +1542,9 @@ def reset_products():
 
         session.commit()
 
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "RESET_PRODUCTS", f"Reset products (deleted: {len(products)})")
+
         return {
             "message": "All products, batches, and inventory history deleted.",
             "deleted": {"products": len(products)},
@@ -1451,7 +1552,7 @@ def reset_products():
 
 
 @app.post("/api/admin/reset-sales")
-def reset_sales():
+def reset_sales(request: Request):
     with get_session() as session:
         sale_items = session.exec(select(SaleItem)).all()
         for obj in sale_items:
@@ -1472,6 +1573,9 @@ def reset_sales():
             session.delete(obj)
 
         session.commit()
+
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "RESET_SALES", f"Reset sales (deleted: {len(sales)})")
 
         return {
             "message": "All sales records deleted and stock restored.",
@@ -1543,7 +1647,7 @@ def _parse_bool(value) -> bool:
 
 
 @app.post("/api/admin/import-products")
-async def import_products(file: UploadFile = File(...)):
+async def import_products(request: Request, file: UploadFile = File(...)):
     content = await file.read()
     try:
         data = json.loads(content)
@@ -1620,11 +1724,14 @@ async def import_products(file: UploadFile = File(...)):
 
         session.commit()
 
+    with get_session() as session:
+        actor, actor_id = _request_actor(request, session)
+    log_activity(actor, actor_id, "IMPORT_PRODUCTS", f"Imported {created} products, skipped {skipped}")
     return {"message": f"Imported {created} products, skipped {skipped}.", "created": created, "skipped": skipped}
 
 
 @app.post("/api/admin/import-sales")
-async def import_sales(file: UploadFile = File(...)):
+async def import_sales(request: Request, file: UploadFile = File(...)):
     content = await file.read()
     try:
         data = json.loads(content)
@@ -1722,6 +1829,9 @@ async def import_sales(file: UploadFile = File(...)):
 
         session.commit()
 
+    with get_session() as session:
+        actor, actor_id = _request_actor(request, session)
+    log_activity(actor, actor_id, "IMPORT_SALES", f"Imported {created} sales, skipped {skipped}")
     return {"message": f"Imported {created} sales, skipped {skipped}.", "created": created, "skipped": skipped}
 
 
