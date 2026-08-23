@@ -937,11 +937,19 @@ class ProductCreate(BaseModel):
     bargain_steps: str = ""
 
 
+def ean13_check_digit(body: str) -> str:
+    """Compute the GS1 check digit for a 12-digit EAN-13 body."""
+    if not (len(body) == 12 and body.isdigit()):
+        raise ValueError(f"EAN-13 body must be 12 digits, got {body!r}")
+    total = sum(int(d) if i % 2 == 0 else int(d) * 3 for i, d in enumerate(body))
+    return str((10 - total % 10) % 10)
+
+
 def generate_barcode() -> str:
     prefix = "750"
-    timestamp = str(int(datetime.utcnow().timestamp() * 1000))[-9:]
-    random_digits = f"{random.randint(0, 999):03d}"
-    return f"{prefix}{timestamp}{random_digits}"
+    ms = int(datetime.utcnow().timestamp() * 1000)
+    body = f"{prefix}{((ms + random.randint(0, 999_999_999)) % 1_000_000_000):09d}"
+    return f"{body}{ean13_check_digit(body)}"
 
 
 def make_unique_barcode(session) -> str:
