@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import JsBarcode from "jsbarcode";
 import { Product } from "./ProductModal";
 import { useCurrency } from "../context/CurrencyContext";
+import { barcodeFormat } from "../utils/barcode";
 
 type BarcodeModalProps = {
   isOpen: boolean;
@@ -17,7 +18,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
     if (isOpen && product && barcodeRef.current) {
       try {
         JsBarcode(barcodeRef.current, product.barcode, {
-          format: "CODE128",
+          format: barcodeFormat(product.barcode),
           width: 2,
           height: 60,
           displayValue: false, // We render the readable code text separately
@@ -40,7 +41,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
     const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     try {
       JsBarcode(svgEl, product.barcode, {
-        format: "CODE128",
+        format: barcodeFormat(product.barcode),
         width: 2.5,
         height: 80,
         displayValue: true,
@@ -100,7 +101,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
     const canvas = document.createElement("canvas");
     try {
       JsBarcode(canvas, product.barcode, {
-        format: "CODE128",
+        format: barcodeFormat(product.barcode),
         width: 3,
         height: 100,
         displayValue: true,

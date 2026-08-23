@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import JsBarcode from "jsbarcode";
 import CameraScanner from "./CameraScanner";
 import { useCurrency } from "../context/CurrencyContext";
+import { generateBarcode, barcodeFormat } from "../utils/barcode";
 
 export type Product = {
   id?: number;
@@ -30,13 +31,6 @@ export type Product = {
 };
 
 const BARGIN_STEPS = [100, 500, 1000, 2000, 5000, 10000];
-
-const generateBarcode = () => {
-  const prefix = "750";
-  const timestamp = Date.now().toString().slice(-9);
-  const randomDigits = Math.floor(100 + Math.random() * 900).toString();
-  return `${prefix}${timestamp}${randomDigits}`;
-};
 
 type ProductModalProps = {
   isOpen: boolean;
@@ -90,7 +84,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     if (isOpen && formData.barcode && barcodePreviewRef.current) {
       try {
         JsBarcode(barcodePreviewRef.current, formData.barcode, {
-          format: "CODE128",
+          format: barcodeFormat(formData.barcode),
           width: 1.8,
           height: 40,
           displayValue: true,
