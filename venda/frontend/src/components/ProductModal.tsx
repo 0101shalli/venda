@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import JsBarcode from "jsbarcode";
 import CameraScanner from "./CameraScanner";
+import ScanToast from "./ScanToast";
 import { useCurrency } from "../context/CurrencyContext";
+import { useKeyboardScanner } from "../hooks/useKeyboardScanner";
 import { generateBarcode, barcodeFormat } from "../utils/barcode";
 
 export type Product = {
@@ -78,7 +80,26 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
   const [isSaving, setIsSaving] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanFlash, setScanFlash] = useState(false);
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const barcodePreviewRef = useRef<SVGSVGElement | null>(null);
+  const barcodeInputRef = useRef<HTMLInputElement | null>(null);
+
+  const captureBarcode = (code: string) => {
+    const trimmed = code.trim();
+    if (!trimmed) return;
+    setFormData((prev) => ({ ...prev, barcode: trimmed }));
+    setScannerOpen(false);
+    setScanFlash(true);
+    setToast({ type: "success", message: "Barcode captured" });
+    window.setTimeout(() => setScanFlash(false), 2000);
+  };
+
+  useKeyboardScanner({
+    enabled: isOpen,
+    captureRef: barcodeInputRef,
+    onBarcode: captureBarcode,
+    onNoBarcode: () => setToast({ type: "error", message: "No barcode detected — please scan again." }),
+  });
 
   useEffect(() => {
     if (isOpen && formData.barcode && barcodePreviewRef.current) {
@@ -182,10 +203,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
   };
 
   const handleScanBarcode = (code: string) => {
-    setFormData((prev) => ({ ...prev, barcode: code }));
-    setScannerOpen(false);
-    setScanFlash(true);
-    setTimeout(() => setScanFlash(false), 2000);
+    captureBarcode(code);
   };
 
   const handleManualBarcodeChange = (value: string) => {
@@ -271,6 +289,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                 <div className="mt-1 flex gap-2">
                   <input
                     id="barcode"
+                    ref={barcodeInputRef}
                     type="text"
                     value={formData.barcode}
                     onChange={(e) => handleManualBarcodeChange(e.target.value)}
@@ -325,6 +344,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                 isOpen={scannerOpen}
                 onScan={handleScanBarcode}
                 onClose={() => setScannerOpen(false)}
+                onError={(msg) => setToast({ type: "error", message: msg })}
                 title="Scan Barcode from Product"
               />
 
@@ -788,6 +808,8 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
           </div>
         </form>
       </div>
+
+      {toast && <ScanToast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
     </div>
   );
 }

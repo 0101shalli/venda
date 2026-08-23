@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import BarcodeScanner, { ProductInfo } from "../components/BarcodeScanner";
 import { useCurrency } from "../context/CurrencyContext";
 import { getAuth } from "../services/auth";
+import { useKeyboardScanner } from "../hooks/useKeyboardScanner";
 
 type CartItem = ProductInfo & { quantity: number; bargainPrice?: number; bargainType?: "auto" | "manual" };
 
@@ -426,6 +427,7 @@ export default function SalesTerminal() {
   const [bargainItem, setBargainItem] = useState<CartItem | null>(null);
   const [hasManager1, setHasManager1] = useState<boolean | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
 
   const auth = getAuth();
   const isManager = auth ? ["admin", "manager1", "manager2"].includes(auth.role) : false;
@@ -458,6 +460,33 @@ export default function SalesTerminal() {
       return [...prev, { ...product, quantity: 1 }];
     });
   }, []);
+
+  const scanBarcode = useCallback(
+    async (code: string) => {
+      const trimmed = code.trim();
+      if (!trimmed) return;
+      try {
+        const res = await fetch(`/api/products/lookup?barcode=${encodeURIComponent(trimmed)}`);
+        if (!res.ok) {
+          showToast("error", `No product found for barcode: ${trimmed}`);
+          return;
+        }
+        const product: ProductInfo = await res.json();
+        addToCart(product);
+      } catch {
+        showToast("error", "Network error. Could not look up barcode.");
+      }
+    },
+    [addToCart, showToast]
+  );
+
+  // Hardware (USB / Bluetooth / laser) scanners are keyboard-wedge devices:
+  // listen for their fast key bursts for as long as the sales page is open.
+  useKeyboardScanner({
+    onBarcode: scanBarcode,
+    onNoBarcode: () => showToast("error", "No barcode detected — please scan again."),
+    captureRef: barcodeInputRef,
+  });
 
   const changeQty = (id: number, qty: number) => {
     if (qty <= 0) {
@@ -602,7 +631,7 @@ export default function SalesTerminal() {
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
               📷 Barcode Scanner
             </h2>
-            <BarcodeScanner onProductScanned={addToCart} />
+            <BarcodeScanner onProductScanned={addToCart} inputRef={barcodeInputRef} />
           </div>
         )}
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useCurrency } from "../context/CurrencyContext";
 import CameraScanner from "./CameraScanner";
+import ScanToast from "./ScanToast";
 
 export type ProductInfo = {
   id: number;
@@ -17,72 +18,55 @@ export type ProductInfo = {
 
 type BarcodeScannerProps = {
   onProductScanned: (product: ProductInfo) => void;
+  inputRef?: React.RefObject<HTMLInputElement>;
 };
 
-export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps) {
+export default function BarcodeScanner({ onProductScanned, inputRef: externalInputRef }: BarcodeScannerProps) {
   const { formatPrice } = useCurrency();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const internalRef = useRef<HTMLInputElement>(null);
+  const inputRef = externalInputRef ?? internalRef;
 
   const [barcode, setBarcode] = useState("");
   const [scannedProduct, setScannedProduct] = useState<ProductInfo | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [addedFlash, setAddedFlash] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
-
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      const active = document.activeElement;
-      if (
-        active &&
-        active !== inputRef.current &&
-        (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")
-      ) {
-        return;
-      }
-      if (inputRef.current && active !== inputRef.current) {
-        if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-          inputRef.current.focus();
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, []);
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const lookupBarcode = useCallback(
     async (code: string) => {
       const trimmed = code.trim();
       if (!trimmed) return;
       setIsLookingUp(true);
-      setScanError(null);
       setAddedFlash(false);
       try {
         const res = await fetch(`/api/products/lookup?barcode=${encodeURIComponent(trimmed)}`);
         if (!res.ok) {
-          setScanError(`No product found for barcode: ${trimmed}`);
           setScannedProduct(null);
+          setToast({ type: "error", message: `No product found for barcode: ${trimmed}` });
           return;
         }
         const product: ProductInfo = await res.json();
         setScannedProduct(product);
-        setScanError(null);
         onProductScanned(product);
         setAddedFlash(true);
+        setToast({ type: "success", message: `${product.name} added to cart` });
         setTimeout(() => setAddedFlash(false), 2000);
       } catch {
-        setScanError("Network error. Could not look up product.");
         setScannedProduct(null);
+        setToast({ type: "error", message: "Network error. Could not look up barcode." });
       } finally {
         setIsLookingUp(false);
         setBarcode("");
         if (inputRef.current) inputRef.current.value = "";
-        setTimeout(() => inputRef.current?.focus(), 0);
       }
     },
     [onProductScanned]
   );
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -141,11 +125,12 @@ export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps
         isOpen={cameraOpen}
         onScan={handleCameraScan}
         onClose={() => setCameraOpen(false)}
+        onError={(msg) => setToast({ type: "error", message: msg })}
         title="Scan Product Barcode"
         multiScan={true}
       />
 
-      {/* Barcode input — auto-focused, receives hardware scanner input */}
+      {/* Barcode input — manual typing; hardware scanners are captured globally */}
       <form onSubmit={handleSubmit} className="flex gap-2">
         <input
           ref={inputRef}
@@ -167,18 +152,8 @@ export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps
         </button>
       </form>
 
-      {/* Error */}
-      {scanError && (
-        <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-900/20 dark:text-rose-400">
-          <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          {scanError}
-        </div>
-      )}
-
       {/* Last scanned product card */}
-      {scannedProduct && !scanError && (
+      {scannedProduct && (
         <div
           className={`rounded-2xl border px-4 py-3 transition-all duration-300 ${
             addedFlash
@@ -207,11 +182,14 @@ export default function BarcodeScanner({ onProductScanned }: BarcodeScannerProps
         </div>
       )}
 
-      {!scannedProduct && !scanError && !isLookingUp && (
+      {!scannedProduct && (
         <p className="text-center text-xs text-slate-400 dark:text-slate-500">
           USB / Bluetooth / mobile scanners work automatically — just scan any barcode
         </p>
       )}
+
+      {/* Scan feedback toast */}
+      {toast && <ScanToast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
     </div>
   );
 }
