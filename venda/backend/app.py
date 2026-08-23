@@ -3,7 +3,7 @@ import os
 import random
 import shutil
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     import webview
@@ -855,6 +855,185 @@ def create_sale(request: Request, body: dict):
             "receipt_printed": (print_status or {}).get("success") if print_status else None,
             "receipt_error": (print_status or {}).get("error") if print_status else None,
         }
+
+
+# ---------------------------------------------------------------------------
+# Activity logging endpoints
+# ---------------------------------------------------------------------------
+
+def _query_activity_logs(session, username: str = "", action: str = "", user_id: int = 0, hours: int = 0, limit: int = 500):
+    query = select(ActivityLog)
+    if username.strip():
+        query = query.where(ActivityLog.username == username.strip())
+    if action.strip():
+        query = query.where(ActivityLog.action == action.strip())
+    if user_id:
+        query = query.where(ActivityLog.user_id == user_id)
+    if hours and hours > 0:
+        since = datetime.utcnow() - timedelta(hours=hours)
+        query = query.where(ActivityLog.timestamp >= since)
+    query = query.order_by(ActivityLog.timestamp.desc()).limit(limit)
+    return session.exec(query).all()
+
+
+@app.get("/api/activity-logs")
+def get_activity_logs(username: str = "", action: str = "", user_id: int = 0, hours: int = 0, limit: int = Query(500, ge=1, le=5000)):
+    with get_session() as session:
+        records = _query_activity_logs(session, username, action, user_id, hours, limit)
+        return [
+            {
+                "id": r.id,
+                "username": r.username,
+                "user_id": r.user_id,
+                "action": r.action,
+                "details": r.details,
+                "entity_type": r.entity_type,
+                "entity_id": r.entity_id,
+                "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            }
+            for r in records
+        ]
+
+
+@app.get("/api/activity-logs/export")
+def export_activity_logs_pdf(username: str = "", action: str = "", user_id: int = 0, hours: int = 0, limit: int = Query(5000, ge=1, le=10000)):
+    from fpdf import FPDF
+    with get_session() as session:
+        records = _query_activity_logs(session, username, action, user_id, hours, limit)
+        user_label = "All users"
+        if user_id:
+            u = session.get(User, user_id)
+            if u:
+                user_label = u.full_name or u.username
+        if username.strip():
+            user_label = username
+        range_label = "All time" if not hours else _hours_to_range_label(hours)
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 10, "System Activity Log Report", ln=True, align="C")
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, f"User: {user_label}", ln=True)
+        pdf.cell(0, 7, f"Time range: {range_label}", ln=True)
+        pdf.cell(0, 7, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC", ln=True)
+        pdf.cell(0, 7, f"Total activities: {len(records)}", ln=True)
+        pdf.ln(4)
+
+        col_w = [25, 55, 105]
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_fill_color(230, 230, 230)
+        pdf.cell(col_w[0], 8, "Date/Time", border=1, fill=True)
+        pdf.cell(col_w[1], 8, "Action", border=1, fill=True)
+        pdf.cell(col_w[2], 8, "Details", border=1, fill=True, ln=True)
+
+        pdf.set_font("Helvetica", "", 9)
+        for r in records:
+            ts = r.timestamp.strftime("%Y-%m-%d %H:%M") if r.timestamp else ""
+            details = (r.details or "")[:100]
+            pdf.cell(col_w[0], 8, ts, border=1)
+            pdf.cell(col_w[1], 8, r.action, border=1)
+            pdf.cell(col_w[2], 8, details, border=1, ln=True)
+
+        from fastapi.responses import Response as FastAPIResponse
+        return FastAPIResponse(
+            content=bytes(pdf.output()),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": "attachment; filename=system_activity_log.pdf"
+            },
+        )
+
+
+def _hours_to_range_label(hours: int) -> str:
+    if hours <= 0:
+        return "All time"
+    if hours < 24:
+        return "Last 1 hour"
+    if hours == 24:
+        return "Last 24 hours"
+    if hours == 168:
+        return "Last 1 week"
+    if hours == 720:
+        return "Last 1 month"
+    if hours == 8760:
+        return "Last 1 year"
+    return f"Last {hours} hours"
+
+
+@app.get("/api/activity-logs/user/{user_id}")
+def get_user_activity_logs(user_id: int, limit: int = Query(500, ge=1, le=5000)):
+    with get_session() as session:
+        records = session.exec(
+            select(ActivityLog)
+            .where(ActivityLog.user_id == user_id)
+            .order_by(ActivityLog.timestamp.desc())
+            .limit(limit)
+        ).all()
+        return [
+            {
+                "id": r.id,
+                "username": r.username,
+                "user_id": r.user_id,
+                "action": r.action,
+                "details": r.details,
+                "entity_type": r.entity_type,
+                "entity_id": r.entity_id,
+                "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            }
+            for r in records
+        ]
+
+
+@app.get("/api/activity-logs/user/{user_id}/pdf")
+def user_activity_logs_pdf(user_id: int):
+    with get_session() as session:
+        user = session.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        records = session.exec(
+            select(ActivityLog)
+            .where(ActivityLog.user_id == user_id)
+            .order_by(ActivityLog.timestamp.desc())
+        ).all()
+
+        from fpdf import FPDF
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 10, "User Activity Report", ln=True, align="C")
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, f"User: {user.full_name or user.username}  ({user.role})", ln=True)
+        pdf.cell(0, 7, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC", ln=True)
+        pdf.cell(0, 7, f"Total activities: {len(records)}", ln=True)
+        pdf.ln(4)
+
+        col_w = [25, 55, 105]
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_fill_color(230, 230, 230)
+        pdf.cell(col_w[0], 8, "Date/Time", border=1, fill=True)
+        pdf.cell(col_w[1], 8, "Action", border=1, fill=True)
+        pdf.cell(col_w[2], 8, "Details", border=1, fill=True, ln=True)
+
+        pdf.set_font("Helvetica", "", 9)
+        for r in records:
+            ts = r.timestamp.strftime("%Y-%m-%d %H:%M") if r.timestamp else ""
+            details = (r.details or "")[:100]
+            pdf.cell(col_w[0], 8, ts, border=1)
+            pdf.cell(col_w[1], 8, r.action, border=1)
+            pdf.cell(col_w[2], 8, details, border=1, ln=True)
+
+        from fastapi.responses import Response as FastAPIResponse
+        return FastAPIResponse(
+            content=bytes(pdf.output()),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=activity_report_{user.username}.pdf"
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
