@@ -43,11 +43,11 @@ const ZXING_FORMATS = [
   ZXing.BarcodeFormat.DATA_MATRIX,
 ];
 
-// Detection timeout: a single frame decode attempt that fails after this long
-// triggers the "could not detect in time" error toast.
-const SLOW_DETECT_MS = 50;
+// Detection timeout: an expensive decode pass (full frame / magnified crop)
+// that fails after this long triggers the "could not detect in time" toast.
+const SLOW_DETECT_MS = 60;
 // Decode pacing between frames.
-const FRAME_GAP_MS = 55;
+const FRAME_GAP_MS = 70;
 // Toast throttling so repeated slow frames don't spam.
 const SLOW_TOAST_COOLDOWN_MS = 2000;
 
@@ -68,6 +68,8 @@ export default function CameraScanner({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const decoderRef = useRef<Decoder | null>(null);
+  const tryHarderDecoderRef = useRef<Decoder | null>(null);
+  const frameCounterRef = useRef(0);
   const rafRef = useRef(0);
   const scanningRef = useRef(false);
   const stallTimerRef = useRef(0);
@@ -78,7 +80,11 @@ export default function CameraScanner({
   const slowToastGraceUntilRef = useRef(0);
   const lastScanAtRef = useRef(0);
   const lastScanCodeRef = useRef("");
+  const cropIndexRef = useRef(0);
   const cameraIdRef = useRef("");
+  const startTokenRef = useRef(0);
+  const restartAtRef = useRef(0);
+  const retryAttemptRef = useRef(0);
   const isOpenRef = useRef(isOpen);
   const onScanRef = useRef(onScan);
   const onCloseRef = useRef(onClose);
@@ -106,9 +112,11 @@ export default function CameraScanner({
     if (!decoderRef.current) {
       const hints = new Map<number, any>();
       hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, ZXING_FORMATS);
-      // TRY_HARDER makes ZXing retry rotated/small/defocused barcodes —
-      // critical for reliable 1D decoding from a live webcam.
-      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      // NOTE: no TRY_HARDER here. On live webcam video it makes decoding roughly
+      // an order of magnitude slower (1-3s per full frame), which starves the
+      // video pipeline, stalls the preview, and can make the browser kill the
+      // track — causing endless "reconnecting camera" restarts. The targeted
+      // downsized scan-line passes below decode 1D barcodes reliably on time.
       decoderRef.current = {
         reader: new ZXing.MultiFormatReader(false, hints),
         hints,
@@ -117,11 +125,29 @@ export default function CameraScanner({
     return decoderRef.current;
   };
 
+  const getTryHarderDecoder = (): Decoder => {
+    if (!tryHarderDecoderRef.current) {
+      const hints = new Map<number, any>();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, ZXING_FORMATS);
+      // TRY_HARDER is an order of magnitude slower on full frames (see the
+      // NOTE above), but on a small magnified crop it stays fast while
+      // recovering small, rotated, or partially-distorted barcodes on curved
+      // (non-uniform) surfaces.
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      tryHarderDecoderRef.current = {
+        reader: new ZXing.MultiFormatReader(false, hints),
+        hints,
+      };
+    }
+    return tryHarderDecoderRef.current;
+  };
+
   const decodeCanvas = (
     canvas: HTMLCanvasElement,
-    Binarizer: typeof ZXing.HybridBinarizer | typeof ZXing.GlobalHistogramBinarizer = ZXing.HybridBinarizer
+    Binarizer: typeof ZXing.HybridBinarizer | typeof ZXing.GlobalHistogramBinarizer = ZXing.HybridBinarizer,
+    decoder: Decoder = getDecoder()
   ): string | null => {
-    const { reader } = getDecoder();
+    const { reader } = decoder;
     const source = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
     const bitmap = new ZXing.BinaryBitmap(new Binarizer(source));
     try {
@@ -131,6 +157,18 @@ export default function CameraScanner({
     } catch {
       return null;
     }
+  };
+
+  // Try adaptive binarization first (handles uneven lighting on curved or
+  // wrinkled surfaces), then fall back to a single global threshold which can
+  // read hazy, low-contrast barcodes the adaptive pass gives up on.
+  const decodeCanvasBest = (
+    canvas: HTMLCanvasElement,
+    decoder: Decoder = getDecoder()
+  ): string | null => {
+    const first = decodeCanvas(canvas, ZXing.HybridBinarizer, decoder);
+    if (first) return first;
+    return decodeCanvas(canvas, ZXing.GlobalHistogramBinarizer, decoder);
   };
 
   const stopScanning = () => {
@@ -208,27 +246,57 @@ export default function CameraScanner({
     return true;
   };
 
+  // Crop regions used by the magnified pass. Rotating through center/left/
+  // right covers barcodes that sit to one side of the frame or wrap around a
+  // curved surface (can / bottle) where only a portion faces the camera.
+  const ZOOM_REGIONS = [
+    { x: 0.25, y: 0.18, w: 0.5, h: 0.64 }, // center
+    { x: 0.0, y: 0.2, w: 0.5, h: 0.6 }, // left
+    { x: 0.5, y: 0.2, w: 0.5, h: 0.6 }, // right
+  ];
+
+  const runMagnifiedPass = (
+    canvas: HTMLCanvasElement,
+    video: HTMLVideoElement,
+    vw: number,
+    vh: number
+  ): string | null => {
+    const region = ZOOM_REGIONS[cropIndexRef.current % ZOOM_REGIONS.length];
+    cropIndexRef.current += 1;
+    const sx = Math.max(0, Math.round(vw * region.x));
+    const sy = Math.max(0, Math.round(vh * region.y));
+    const sw = Math.min(vw, Math.max(1, Math.round(vw * region.w)));
+    const sh = Math.min(vh, Math.max(1, Math.round(vh * region.h)));
+    // Upscale the crop 2-3x so barcode modules are several pixels wide — small
+    // barcodes and tight/module-heavy codes on curved surfaces then decode via
+    // row scanning that would otherwise be below the minimum module width.
+    const targetW = Math.min(960, Math.round(sw * 3));
+    const targetH = Math.max(1, Math.round((targetW * sh) / sw));
+    if (!drawSource(canvas, video, sx, sy, sw, sh, targetW, targetH)) return null;
+    return decodeCanvasBest(canvas, getTryHarderDecoder());
+  };
+
   const processFrame = () => {
     const video = videoRef.current;
     if (!video || video.readyState < 2 || video.videoWidth < 16) return;
     lastFrameAtRef.current = performance.now();
 
-    const t0 = performance.now();
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     const canvas = getCanvas();
     if (!canvas) return;
 
     let code: string | null = null;
+    let heavyElapsed = 0;
 
     // Pass 1 — scan line. Keep FULL horizontal resolution (1D barcodes only
-    // care about width), squash height to ~96 rows. ZXing scans rows, so this
-    // decodes in a few milliseconds while keeping module fidelity.
+    // care about width), squash height to ~96 rows. This single pass decodes
+    // EAN/Code128 in a few milliseconds without stressing the main thread.
     const bandSh = vh * 0.6;
     const bandSy = vh * 0.2;
     const dh1 = Math.max(40, Math.min(96, Math.round(bandSh)));
     if (drawSource(canvas, video, 0, bandSy, vw, bandSh, vw, dh1)) {
-      code = decodeCanvas(canvas);
+      code = decodeCanvasBest(canvas);
     }
 
     // Pass 2 — centered band, aspect preserved (catches off-center/tilted).
@@ -238,31 +306,41 @@ export default function CameraScanner({
       const dw2 = Math.min(vw, 1024);
       const dh2 = Math.round((sh2 * dw2) / vw);
       if (drawSource(canvas, video, 0, sy2, vw, sh2, dw2, dh2)) {
-        code = decodeCanvas(canvas);
+        code = decodeCanvasBest(canvas);
       }
     }
 
-    // Pass 3 — full frame, aspect preserved, both binarizers as fallback.
+    // Expensive passes alternate every frame so the two cheap passes above
+    // still run each frame: even frames scan the whole frame (large / oddly
+    // placed barcodes), odd frames magnify a sub-region with TRY_HARDER (small
+    // or curved-surface barcodes).
     if (!code) {
-      const dw3 = Math.min(vw, 1280);
-      const dh3 = Math.round((vh * dw3) / vw);
-      if (drawSource(canvas, video, 0, 0, vw, vh, dw3, dh3)) {
-        code = decodeCanvas(canvas, ZXing.HybridBinarizer);
-        if (!code) {
-          code = decodeCanvas(canvas, ZXing.GlobalHistogramBinarizer);
+      const tHeavy = performance.now();
+      if (frameCounterRef.current % 2 === 0) {
+        // Pass 3 — full frame, both binarizers.
+        const dw3 = Math.min(vw, 720);
+        const dh3 = Math.round((vh * dw3) / vw);
+        if (drawSource(canvas, video, 0, 0, vw, vh, dw3, dh3)) {
+          code = decodeCanvasBest(canvas);
         }
+      } else {
+        // Pass 4 — magnified region crop.
+        code = runMagnifiedPass(canvas, video, vw, vh);
       }
+      heavyElapsed = performance.now() - tHeavy;
     }
+    frameCounterRef.current += 1;
 
     if (code) {
       handleScan(code);
       return;
     }
 
-    // Slow-detection watchdog: if a full frame attempt failed and took longer
-    // than 50ms, surface an error toast (throttled, with warm-up grace).
-    const elapsed = performance.now() - t0;
-    if (elapsed > SLOW_DETECT_MS) {
+    // Slow-detection watchdog: an expensive pass that runs long without
+    // decoding usually means barcode-like content is on screen but too small,
+    // warped, or poorly lit — surface guidance to the user (throttled, with a
+    // warm-up grace after opening the scanner or a successful scan).
+    if (heavyElapsed > SLOW_DETECT_MS) {
       const nowP = performance.now();
       if (
         nowP >= slowToastGraceUntilRef.current &&
@@ -270,7 +348,7 @@ export default function CameraScanner({
       ) {
         slowToastAtRef.current = nowP;
         onErrorRef.current?.(
-          `Barcode not detected within 50 ms (took ${Math.round(elapsed)} ms). Move the barcode closer, keep it flat and steady, and try again.`
+          `Barcode not detected (took ${Math.round(heavyElapsed)} ms). Move the barcode closer, flatten the surface, and hold steady.`
         );
       }
     }
@@ -291,33 +369,45 @@ export default function CameraScanner({
     };
     rafRef.current = requestAnimationFrame(tick);
 
-    // Stall watchdog: if the video stops producing frames, tell the user and
-    // reconnect.
+    // Stall watchdog: if the video stops producing frames AND the capture loop
+    // is genuinely frozen, reconnect. A 4s threshold plus a 2.5s reconnect
+    // backoff prevents endless restart loops while the user is scanning.
     stallTimerRef.current = window.setInterval(() => {
       if (!scanningRef.current) return;
-      if (performance.now() - lastFrameAtRef.current > 3000) {
-        const msg = "Camera preview is not updating — reconnecting camera...";
-        onErrorRef.current?.(msg);
-        stopEverything();
-        window.setTimeout(() => {
-          if (!isOpenRef.current) return;
-          startScanner(cameraIdRef.current || undefined);
-        }, 500);
-      }
+      const video = videoRef.current;
+      const frozen =
+        video &&
+        video.videoWidth > 0 &&
+        performance.now() - lastFrameAtRef.current > 4000;
+      if (!frozen) return;
+      if (performance.now() - restartAtRef.current < 2500) return;
+      restartAtRef.current = performance.now();
+      const msg = "Camera preview is not updating — reconnecting camera...";
+      onErrorRef.current?.(msg);
+      window.setTimeout(() => {
+        if (!isOpenRef.current) return;
+        startScanner(cameraIdRef.current || undefined);
+      }, 500);
     }, 2000);
   };
 
   const describeCameraError = (err: any): string => {
     const name = err?.name || "";
     const msg = err?.message || String(err);
+    if (
+      name === "NotReadableError" ||
+      name === "TrackStartError" ||
+      msg.includes("in use") ||
+      msg.includes("Failed to allocate resources") ||
+      msg.includes("allocate resources")
+    ) {
+      return "Camera is busy or its resources are unavailable. Close any other app using the camera, then press Retry.";
+    }
     if (name === "NotAllowedError" || msg.includes("Permission")) {
       return "Camera permission denied. Allow camera access in your browser/device settings and try again.";
     }
     if (name === "NotFoundError" || name === "DevicesNotFoundError" || msg.includes("NotFound")) {
       return "No camera found. Connect a camera or use a USB barcode scanner.";
-    }
-    if (name === "NotReadableError" || name === "TrackStartError" || msg.includes("in use")) {
-      return "Camera is in use by another app. Close other camera apps and try again.";
     }
     if (name === "OverconstrainedError" || msg.includes("Overconstrained")) {
       return "Camera does not meet requirements. Try selecting a different camera.";
@@ -327,11 +417,14 @@ export default function CameraScanner({
 
   const startScanner = async (cameraId?: string) => {
     if (!isOpenRef.current) return;
+    // Guard against overlapping/concurrent restarts: each start takes a token;
+    // any earlier async start that resolves after this one bails out.
+    const token = ++startTokenRef.current;
+    restartAtRef.current = performance.now();
     setError(null);
     setDetected(false);
     setIsStarting(true);
-    stopEverything();
-
+    stopScanning();
     const videoConstraints: MediaTrackConstraints = cameraId
       ? { deviceId: { exact: cameraId } }
       : { facingMode: getDefaultFacingMode() };
@@ -340,14 +433,20 @@ export default function CameraScanner({
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           ...videoConstraints,
-          width: { ideal: 640 },
-          height: { ideal: 480 },
+          // Ask for 720p so small barcodes keep enough native pixels to be
+          // magnified and decoded successfully on the crop pass below.
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
         },
         audio: false,
       });
-      if (!isOpenRef.current) {
+      retryAttemptRef.current = 0;
+      if (!isOpenRef.current || token !== startTokenRef.current) {
         stream.getTracks().forEach((t) => t.stop());
         return;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
       }
       streamRef.current = stream;
 
@@ -358,6 +457,11 @@ export default function CameraScanner({
         video.muted = true;
         await video.play().catch(() => {});
       }
+      if (!isOpenRef.current || token !== startTokenRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        return;
+      }
 
       const track = stream.getVideoTracks()[0];
       track?.addEventListener("ended", handleTrackEnded, { once: true });
@@ -367,17 +471,44 @@ export default function CameraScanner({
       setIsStarting(false);
       startScanning();
     } catch (err: any) {
+      if (!isOpenRef.current || token !== startTokenRef.current) return;
       setIsStarting(false);
       const msg = describeCameraError(err);
       setError(msg);
       onErrorRef.current?.(msg);
+
+      // "Failed to allocate resources" (NotReadableError) is frequently
+      // transient — the OS often frees the camera moments later. Auto-retry
+      // a couple of times with a short pause before giving up, so the scanner
+      // starts on its own instead of dead-ending with a manual Retry.
+      const raw = `${err?.name || ""} ${err?.message || ""}`;
+      const transientResource =
+        err?.name === "NotReadableError" ||
+        err?.name === "TrackStartError" ||
+        raw.includes("Failed to allocate resources") ||
+        raw.includes("allocate resources");
+      if (transientResource && isOpenRef.current) {
+        const attempt = retryAttemptRef.current;
+        if (attempt < 2 && token === startTokenRef.current) {
+          retryAttemptRef.current = attempt + 1;
+          window.setTimeout(() => {
+            if (!isOpenRef.current || token !== startTokenRef.current) return;
+            startScanner(cameraIdRef.current || undefined);
+          }, 800 * (attempt + 1));
+        }
+      }
     }
   };
 
   const handleTrackEnded = () => {
-    if (!scanningRef.current) return;
-    stopScanning();
     if (!isOpenRef.current) return;
+    // Backoff: never reconnect in a tight loop. If the previous restart was
+    // less than 2.5s ago, wait instead of immediately relaunching.
+    const now = performance.now();
+    const canRestart = now - restartAtRef.current >= 2500;
+    restartAtRef.current = now;
+    stopScanning();
+    if (!canRestart || !isOpenRef.current) return;
     const msg = "Camera connection lost. Reconnecting...";
     setError(msg);
     onErrorRef.current?.(msg);
@@ -546,7 +677,7 @@ export default function CameraScanner({
 
         <div className="px-4 pb-4 pt-3">
           <p className="text-center text-[11px] text-slate-400 dark:text-slate-500">
-            Point camera at a barcode — Code128, EAN-13, UPC, QR and more
+            Point camera at a barcode — small or curved labels work too. Move closer and hold steady.
           </p>
           {multiScan && (
             <button
