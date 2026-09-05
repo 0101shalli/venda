@@ -46,8 +46,14 @@ const ZXING_FORMATS = [
 // Detection timeout: an expensive decode pass (full frame / magnified crop)
 // that fails after this long triggers the "could not detect in time" toast.
 const SLOW_DETECT_MS = 60;
-// Decode pacing between frames.
-const FRAME_GAP_MS = 70;
+// Adaptive decode pacing: processFrame reports how long each frame took and
+// the frame-to-frame gap adjusts in step — fast machines get many more decode
+// attempts per second, slow ones get throttled so the UI never janks.
+const FRAME_GAP_MIN_MS = 25;
+const FRAME_GAP_MAX_MS = 70;
+// After this many unchanged frames the heavy passes run anyway, so a perfectly
+// still, in-view barcode still gets the full treatment.
+const MAX_STATIC_HEAVY_FRAMES = 5;
 // Toast throttling so repeated slow frames don't spam.
 const SLOW_TOAST_COOLDOWN_MS = 2000;
 
@@ -85,6 +91,11 @@ export default function CameraScanner({
   const startTokenRef = useRef(0);
   const restartAtRef = useRef(0);
   const retryAttemptRef = useRef(0);
+  const avgFrameMsRef = useRef(20);
+  const frameGapMsRef = useRef(FRAME_GAP_MAX_MS);
+  const framesSinceHeavyRef = useRef(0);
+  const snapshotRef = useRef<Uint8ClampedArray | null>(null);
+  const thumbCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const isOpenRef = useRef(isOpen);
   const onScanRef = useRef(onScan);
   const onCloseRef = useRef(onClose);
@@ -242,8 +253,77 @@ export default function CameraScanner({
     if (!ctx) return false;
     canvas.width = Math.max(1, Math.round(dw));
     canvas.height = Math.max(1, Math.round(dh));
+    // High-quality scaling keeps small barcode modules crisp after upscaling.
+    ctx.imageSmoothingQuality = "high";
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
     return true;
+  };
+
+  // Rotate the centered region 90° and squash it back into a horizontal scan
+  // line. A barcode being held sideways (bars horizontal) is invisible to the
+  // horizontal passes above; after this rotation its bars are vertical again
+  // and the fast row-scan decoder reads it like any other 1D code.
+  const drawRotatedBand = (
+    canvas: HTMLCanvasElement,
+    video: HTMLVideoElement,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number
+  ): boolean => {
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return false;
+    // Canvas dims are swapped: width becomes source height (bar detail, capped
+    // at ~960) and height becomes the squashed source width (code length,
+    // like Pass 1's ~96 rows).
+    const dWidth = Math.min(960, Math.max(1, Math.round(sh)));
+    const dHeight = Math.max(40, Math.min(96, Math.round(sw * 0.14)));
+    canvas.width = dWidth;
+    canvas.height = dHeight;
+    ctx.save();
+    ctx.imageSmoothingQuality = "high";
+    ctx.translate(dWidth, 0);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, dHeight, dWidth);
+    ctx.restore();
+    return true;
+  };
+
+  // Sample a tiny downscaled thumbnail of the current frame and compare it to
+  // the previous sample. When nothing moved, the expensive passes are skipped
+  // (idle scenes use almost no CPU and the loop paces itself faster) — but a
+  // static barcode is still covered because the cheap orientation passes run
+  // every frame and the heavy passes run periodically regardless of motion.
+  const detectMotion = (video: HTMLVideoElement, vw: number, vh: number): boolean => {
+    let canvas = thumbCanvasRef.current;
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      thumbCanvasRef.current = canvas;
+    }
+    const w = 24;
+    const h = 18;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return true;
+    ctx.drawImage(video, 0, 0, vw, vh, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const prev = snapshotRef.current;
+    if (!prev) {
+      snapshotRef.current = new Uint8ClampedArray(data);
+      return true;
+    }
+    let diff = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      diff +=
+        Math.abs(data[i] - prev[i]) +
+        Math.abs(data[i + 1] - prev[i + 1]) +
+        Math.abs(data[i + 2] - prev[i + 2]);
+      prev[i] = data[i];
+      prev[i + 1] = data[i + 1];
+      prev[i + 2] = data[i + 2];
+    }
+    return diff / (w * h * 3) > 5;
   };
 
   // Crop regions used by the magnified pass. Rotating through center/left/
@@ -276,15 +356,16 @@ export default function CameraScanner({
     return decodeCanvasBest(canvas, getTryHarderDecoder());
   };
 
-  const processFrame = () => {
+  const processFrame = (): number => {
     const video = videoRef.current;
-    if (!video || video.readyState < 2 || video.videoWidth < 16) return;
+    if (!video || video.readyState < 2 || video.videoWidth < 16) return 0;
     lastFrameAtRef.current = performance.now();
+    const start = performance.now();
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     const canvas = getCanvas();
-    if (!canvas) return;
+    if (!canvas) return 0;
 
     let code: string | null = null;
     let heavyElapsed = 0;
@@ -310,36 +391,53 @@ export default function CameraScanner({
       }
     }
 
-    // Expensive passes alternate every frame so the two cheap passes above
-    // still run each frame: even frames scan the whole frame (large / oddly
-    // placed barcodes), odd frames magnify a sub-region with TRY_HARDER (small
-    // or curved-surface barcodes).
+    // Pass 3 — rotated scan line: catches barcodes being held sideways (bars
+    // horizontal), which the horizontal passes above can't see.
     if (!code) {
-      const tHeavy = performance.now();
-      if (frameCounterRef.current % 2 === 0) {
-        // Pass 3 — full frame, both binarizers.
-        const dw3 = Math.min(vw, 720);
-        const dh3 = Math.round((vh * dw3) / vw);
-        if (drawSource(canvas, video, 0, 0, vw, vh, dw3, dh3)) {
-          code = decodeCanvasBest(canvas);
-        }
-      } else {
-        // Pass 4 — magnified region crop.
-        code = runMagnifiedPass(canvas, video, vw, vh);
+      const rx = vw * 0.15;
+      const rw = vw * 0.7;
+      if (drawRotatedBand(canvas, video, Math.round(rx), 0, Math.round(rw), vh)) {
+        code = decodeCanvasBest(canvas);
       }
-      heavyElapsed = performance.now() - tHeavy;
+    }
+
+    // Heavy passes (full frame / magnified crop) alternate, but only on frames
+    // where the scene changed — or at least every MAX_STATIC_HEAVY_FRAMES
+    // frames so a still, in-view barcode never goes unhandled.
+    if (!code) {
+      framesSinceHeavyRef.current += 1;
+      const tHeavy = performance.now();
+      if (
+        detectMotion(video, vw, vh) ||
+        framesSinceHeavyRef.current >= MAX_STATIC_HEAVY_FRAMES
+      ) {
+        framesSinceHeavyRef.current = 0;
+        if (frameCounterRef.current % 2 === 0) {
+          // Pass 4 — full frame, both binarizers (large / oddly placed
+          // barcodes, uneven lighting).
+          const dw4 = Math.min(vw, 720);
+          const dh4 = Math.round((vh * dw4) / vw);
+          if (drawSource(canvas, video, 0, 0, vw, vh, dw4, dh4)) {
+            code = decodeCanvasBest(canvas);
+          }
+        } else {
+          // Pass 5 — magnified region crop, TRY_HARDER (small / curved codes).
+          code = runMagnifiedPass(canvas, video, vw, vh);
+        }
+        heavyElapsed = performance.now() - tHeavy;
+      }
     }
     frameCounterRef.current += 1;
 
     if (code) {
       handleScan(code);
-      return;
+      return performance.now() - start;
     }
 
-    // Slow-detection watchdog: an expensive pass that runs long without
-    // decoding usually means barcode-like content is on screen but too small,
-    // warped, or poorly lit — surface guidance to the user (throttled, with a
-    // warm-up grace after opening the scanner or a successful scan).
+    // Slow-detection watchdog: when an expensive pass runs long without
+    // decoding, the scene likely holds barcode-like content that is too small,
+    // warped, or poorly lit — surface guidance (throttled, with a warm-up grace
+    // after opening the scanner or a successful scan).
     if (heavyElapsed > SLOW_DETECT_MS) {
       const nowP = performance.now();
       if (
@@ -352,20 +450,33 @@ export default function CameraScanner({
         );
       }
     }
+
+    return performance.now() - start;
   };
 
   const startScanning = () => {
     if (!isOpenRef.current) return;
     scanningRef.current = true;
     lastFrameAtRef.current = performance.now();
+    avgFrameMsRef.current = 20;
+    frameGapMsRef.current = FRAME_GAP_MAX_MS;
+    framesSinceHeavyRef.current = 0;
 
     let lastFrame = 0;
     const tick = (now: number) => {
       if (!scanningRef.current) return;
       rafRef.current = requestAnimationFrame(tick);
-      if (now - lastFrame < FRAME_GAP_MS) return;
+      if (now - lastFrame < frameGapMsRef.current) return;
       lastFrame = now;
-      processFrame();
+      const elapsed = processFrame();
+      // Pace decode attempts to measured capacity: gap ≈ 2× frame cost plus a
+      // small margin, clamped. Cheap/idle frames → 25ms gap (~40 attempts/s);
+      // heavy frames auto-throttle so the main thread and preview stay smooth.
+      avgFrameMsRef.current = avgFrameMsRef.current * 0.85 + elapsed * 0.15;
+      frameGapMsRef.current = Math.max(
+        FRAME_GAP_MIN_MS,
+        Math.min(FRAME_GAP_MAX_MS, Math.round(avgFrameMsRef.current * 2 + 8))
+      );
     };
     rafRef.current = requestAnimationFrame(tick);
 
@@ -677,7 +788,7 @@ export default function CameraScanner({
 
         <div className="px-4 pb-4 pt-3">
           <p className="text-center text-[11px] text-slate-400 dark:text-slate-500">
-            Point camera at a barcode — small or curved labels work too. Move closer and hold steady.
+            Point camera at a barcode — flat, curved, small, or sideways labels all work.
           </p>
           {multiScan && (
             <button
