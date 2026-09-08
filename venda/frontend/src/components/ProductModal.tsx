@@ -30,6 +30,12 @@ export type Product = {
   bargain_enabled?: boolean;
   min_selling_price?: number | null;
   bargain_steps?: string;
+  refundable?: boolean;
+  credit_discount_percentage?: number | null;
+  credit_duration_days?: number | null;
+  bulk_enabled?: boolean;
+  bulk_quantity?: number | null;
+  bulk_price?: number | null;
 };
 
 const BARGIN_STEPS = [100, 500, 1000, 2000, 5000, 10000];
@@ -67,12 +73,19 @@ const EMPTY_FORM: Product = {
   bargain_enabled: false,
   min_selling_price: null,
   bargain_steps: "",
+  refundable: false,
+  credit_discount_percentage: 0,
+  credit_duration_days: 0,
+  bulk_enabled: false,
+  bulk_quantity: 0,
+  bulk_price: 0,
 };
 
 export default function ProductModal({ isOpen, isEditMode, product, onClose, onSave, categories = DEFAULT_CATEGORIES }: ProductModalProps) {
   const { currencySymbol, formatPrice } = useCurrency();
   const [formData, setFormData] = useState<Product>(EMPTY_FORM);
   const [systemBargainEnabled, setSystemBargainEnabled] = useState(false);
+  const [systemRefundEnabled, setSystemRefundEnabled] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [minPriceError, setMinPriceError] = useState<string | null>(null);
@@ -140,8 +153,14 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     if (!isOpen) return;
     fetch("/api/settings")
       .then((res) => res.json())
-      .then((data) => setSystemBargainEnabled(data.bargain_enabled === "true"))
-      .catch(() => setSystemBargainEnabled(false));
+      .then((data) => {
+        setSystemBargainEnabled(data.bargain_enabled === "true");
+        setSystemRefundEnabled(data.refund_feature_enabled === "true");
+      })
+      .catch(() => {
+        setSystemBargainEnabled(false);
+        setSystemRefundEnabled(false);
+      });
   }, [isOpen]);
 
   const validateForm = () => {
@@ -725,6 +744,161 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
               </div>
             </div>
           )}
+
+          {/* Refund / Store Credit */}
+          {systemRefundEnabled && (
+            <div>
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Refund / Store Credit</h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Refundable</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {formData.refundable
+                        ? "Customers can refund this product for store credit."
+                        : "This product cannot be refunded for store credit."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, refundable: !formData.refundable })}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all active:scale-95 ${
+                      formData.refundable
+                        ? "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                        : "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-sky-500 dark:hover:bg-sky-600"
+                    }`}
+                  >
+                    {formData.refundable ? "Disable Refunds" : "Enable Refunds"}
+                  </button>
+                </div>
+
+                {formData.refundable && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="credit_discount_percentage" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Credit Discount %
+                      </label>
+                      <input
+                        id="credit_discount_percentage"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={formData.credit_discount_percentage ?? 0}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            credit_discount_percentage: Math.min(100, Math.max(0, e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)),
+                          })
+                        }
+                        className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Percentage deducted from the price when issuing credit.
+                      </p>
+                    </div>
+                    <div>
+                      <label htmlFor="credit_duration_days" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Credit Duration (days)
+                      </label>
+                      <input
+                        id="credit_duration_days"
+                        type="number"
+                        min="0"
+                        value={formData.credit_duration_days ?? 0}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            credit_duration_days: Math.max(0, e.target.value === "" ? 0 : parseInt(e.target.value) || 0),
+                          })
+                        }
+                        className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        How long the credit is valid before expiring.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Bulk Price */}
+          <div>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Bulk Price</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Bulk Pricing</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {formData.bulk_enabled
+                      ? "Bulk price is enabled for this product."
+                      : "This product has no bulk pricing."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, bulk_enabled: !formData.bulk_enabled })}
+                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all active:scale-95 ${
+                    formData.bulk_enabled
+                      ? "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-sky-500 dark:hover:bg-sky-600"
+                  }`}
+                >
+                  {formData.bulk_enabled ? "Disable Bulk Price" : "Enable Bulk Price"}
+                </button>
+              </div>
+
+              {formData.bulk_enabled && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="bulk_quantity" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Bulk Quantity
+                    </label>
+                    <input
+                      id="bulk_quantity"
+                      type="number"
+                      min="1"
+                      value={formData.bulk_quantity ?? 0}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          bulk_quantity: Math.max(1, e.target.value === "" ? 0 : parseInt(e.target.value) || 0),
+                        })
+                      }
+                      className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Quantity at which the bulk price applies (e.g. 10).
+                    </p>
+                  </div>
+                  <div>
+                    <label htmlFor="bulk_price" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Bulk Price
+                    </label>
+                    <input
+                      id="bulk_price"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.bulk_price ?? 0}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          bulk_price: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0,
+                        })
+                      }
+                      className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                    />
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Price charged per unit when the quantity is an exact bulk multiple.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Logistics */}
           <div>
