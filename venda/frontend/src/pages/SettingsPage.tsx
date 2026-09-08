@@ -99,12 +99,21 @@ export default function SettingsPage() {
 
   const [systemLogsEnabled, setSystemLogsEnabled] = useState(true);
 
+  const [refundFeatureEnabled, setRefundFeatureEnabled] = useState(false);
+
+  const [lendingEnabled, setLendingEnabled] = useState(false);
+
   const [printerType, setPrinterType] = useState("file");
   const [printerDevice, setPrinterDevice] = useState("");
   const [printerSaving, setPrinterSaving] = useState(false);
 
   const [storeName, setStoreName] = useState("");
   const [storeLogo, setStoreLogo] = useState("");
+  const [storeContact1, setStoreContact1] = useState("");
+  const [storeContact2, setStoreContact2] = useState("");
+  const [storeEmail, setStoreEmail] = useState("");
+  const [storeWebsite, setStoreWebsite] = useState("");
+  const [storeLocation, setStoreLocation] = useState("");
   const [storeConfigSaving, setStoreConfigSaving] = useState(false);
 
   const [defaultProfit, setDefaultProfit] = useState(0);
@@ -155,10 +164,17 @@ export default function SettingsPage() {
         setBarcodeScannerDisabled(data.barcode_scanner_disabled === "true");
         setBargainEnabled(data.bargain_enabled === "true");
         setSystemLogsEnabled(data.system_logs_enabled === "true");
+        setRefundFeatureEnabled(data.refund_feature_enabled === "true");
+        setLendingEnabled(data.lending_enabled === "true");
         setPrinterType(data.printer_type || "file");
         setPrinterDevice(data.printer_device || "");
         setStoreName(data.store_name || "");
         setStoreLogo(data.store_logo || "");
+        setStoreContact1(data.store_contact1 || "");
+        setStoreContact2(data.store_contact2 || "");
+        setStoreEmail(data.store_email || "");
+        setStoreWebsite(data.store_website || "");
+        setStoreLocation(data.store_location || "");
       })
       .catch(() => {});
 
@@ -243,6 +259,46 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error("Failed to update");
       setSystemLogsEnabled(newValue);
       setSaveMessage({ type: "success", text: "System logs setting updated!" });
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (err: any) {
+      setSaveMessage({ type: "error", text: err.message });
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const handleRefundFeatureToggle = async () => {
+    setConfigSaving(true);
+    const newValue = !refundFeatureEnabled;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refund_feature_enabled: String(newValue) }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      setRefundFeatureEnabled(newValue);
+      setSaveMessage({ type: "success", text: "Refund feature setting updated!" });
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (err: any) {
+      setSaveMessage({ type: "error", text: err.message });
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const handleLendingToggle = async () => {
+    setConfigSaving(true);
+    const newValue = !lendingEnabled;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lending_enabled: String(newValue) }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      setLendingEnabled(newValue);
+      setSaveMessage({ type: "success", text: "Lending feature setting updated!" });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -581,6 +637,50 @@ export default function SettingsPage() {
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
             <div className="flex items-center justify-between">
               <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Enable Refund / Store Credit Feature</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Allow refunds for store credit and the credit processing flow</p>
+              </div>
+              <button
+                onClick={handleRefundFeatureToggle}
+                disabled={configSaving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  refundFeatureEnabled ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
+                    refundFeatureEnabled ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Enable Lending Feature</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Allow sales credit and layaway borrow cards for customers</p>
+              </div>
+              <button
+                onClick={handleLendingToggle}
+                disabled={configSaving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  lendingEnabled ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
+                    lendingEnabled ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
                 <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">System Logs</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Record login and activity events in the system log</p>
               </div>
@@ -681,6 +781,62 @@ export default function SettingsPage() {
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Leave empty to show "General Store"</p>
               </div>
               <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Contact Information</label>
+                <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">Shown on receipts, printed cards and exported documents.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Contact 1</label>
+                    <input
+                      type="text"
+                      value={storeContact1}
+                      onChange={(e) => setStoreContact1(e.target.value)}
+                      placeholder="Phone 1"
+                      className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Contact 2</label>
+                    <input
+                      type="text"
+                      value={storeContact2}
+                      onChange={(e) => setStoreContact2(e.target.value)}
+                      placeholder="Phone 2"
+                      className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Email</label>
+                    <input
+                      type="text"
+                      value={storeEmail}
+                      onChange={(e) => setStoreEmail(e.target.value)}
+                      placeholder="contact@shop.com"
+                      className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Website</label>
+                    <input
+                      type="text"
+                      value={storeWebsite}
+                      onChange={(e) => setStoreWebsite(e.target.value)}
+                      placeholder="www.shop.com"
+                      className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Location</label>
+                    <input
+                      type="text"
+                      value={storeLocation}
+                      onChange={(e) => setStoreLocation(e.target.value)}
+                      placeholder="Street, city, country"
+                      className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div>
                 <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Store Logo</label>
                 {storeLogo ? (
                   <div className="mb-3">
@@ -742,7 +898,7 @@ export default function SettingsPage() {
                     const res = await fetch("/api/settings", {
                       method: "PUT",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ store_name: storeName, store_logo: storeLogo }),
+                      body: JSON.stringify({ store_name: storeName, store_logo: storeLogo, store_contact1: storeContact1, store_contact2: storeContact2, store_email: storeEmail, store_website: storeWebsite, store_location: storeLocation }),
                     });
                     if (!res.ok) throw new Error("Failed to save store settings");
                     setSaveMessage({ type: "success", text: "Store branding saved!" });
