@@ -14,6 +14,9 @@ export type ProductInfo = {
   bargain_enabled?: boolean;
   min_selling_price?: number | null;
   bargain_steps?: number[];
+  bulk_enabled?: boolean;
+  bulk_quantity?: number;
+  bulk_price?: number;
 };
 
 type BarcodeScannerProps = {
