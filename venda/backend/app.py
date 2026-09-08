@@ -21,11 +21,11 @@ from sqlmodel import select, text
 
 try:
     from .database import create_db_and_tables, get_session, engine
-    from .models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog
+    from .models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog, StoreCredit, LendingAccount, BorrowCard, BorrowCardItem
     from .utils import print_receipt_with_timeout
 except (ImportError, SystemError):
     from database import create_db_and_tables, get_session, engine
-    from models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog
+    from models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog, StoreCredit, LendingAccount, BorrowCard, BorrowCardItem
     from utils import print_receipt_with_timeout
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -131,6 +131,7 @@ def _product_to_dict(p: Product, session=None) -> dict:
         "selling_price": p.selling_price,
         "profit_percentage": p.profit_percentage,
         "current_stock": p.current_stock,
+        "on_hold": p.on_hold or 0,
         "min_stock_level": p.min_stock_level,
         "reorder_point": p.reorder_point,
         "supplier": p.supplier,
@@ -146,6 +147,12 @@ def _product_to_dict(p: Product, session=None) -> dict:
         "bargain_enabled": p.bargain_enabled,
         "min_selling_price": p.min_selling_price,
         "bargain_steps": [int(x) for x in (p.bargain_steps or "").split(",") if x.strip().isdigit()],
+        "refundable": p.refundable,
+        "credit_discount_percentage": p.credit_discount_percentage,
+        "credit_duration_days": p.credit_duration_days,
+        "bulk_enabled": p.bulk_enabled,
+        "bulk_quantity": p.bulk_quantity,
+        "bulk_price": p.bulk_price,
     }
 
 
@@ -165,6 +172,13 @@ def startup_event() -> None:
             "bargain_enabled": "BOOLEAN DEFAULT 0",
             "min_selling_price": "REAL",
             "bargain_steps": "TEXT",
+            "refundable": "BOOLEAN DEFAULT 0",
+            "credit_discount_percentage": "REAL DEFAULT 0",
+            "credit_duration_days": "INTEGER DEFAULT 0",
+            "bulk_enabled": "BOOLEAN DEFAULT 0",
+            "bulk_quantity": "INTEGER DEFAULT 0",
+            "bulk_price": "REAL DEFAULT 0",
+            "on_hold": "INTEGER DEFAULT 0",
         }
         for col_name, col_def in new_cols.items():
             if col_name not in existing_cols:
@@ -176,6 +190,122 @@ def startup_event() -> None:
         user_cols = {row["name"] for row in conn.execute(text("PRAGMA table_info(user)")).mappings()}
         if "disabled" not in user_cols:
             conn.execute(text("ALTER TABLE user ADD COLUMN disabled INTEGER DEFAULT 0"))
+            conn.commit()
+
+    # Schema migration: add bulk pricing columns to saleitem table
+    with engine.connect() as conn:
+        si_cols = {row["name"] for row in conn.execute(text("PRAGMA table_info(saleitem)")).mappings()}
+        si_new = {
+            "is_bulk": "BOOLEAN DEFAULT 0",
+            "bulk_units": "INTEGER DEFAULT 0",
+            "bulk_quantity": "INTEGER DEFAULT 0",
+        }
+        for col_name, col_def in si_new.items():
+            if col_name not in si_cols:
+                conn.execute(text(f"ALTER TABLE saleitem ADD COLUMN {col_name} {col_def}"))
+                conn.commit()
+
+    # Schema migration: add cancelled_at column to store_credit table
+    with engine.connect() as conn:
+        sc_cols = {row["name"] for row in conn.execute(text("PRAGMA table_info(store_credit)")).mappings()}
+        if "cancelled_at" not in sc_cols:
+            conn.execute(text("ALTER TABLE store_credit ADD COLUMN cancelled_at DATETIME"))
+            conn.commit()
+
+    # Schema migration: create lending tables
+    with engine.connect() as conn:
+        existing_tables = {row["name"] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).mappings()}
+        if "lending_account" not in existing_tables:
+            conn.execute(text("""
+                CREATE TABLE lending_account (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    barcode TEXT UNIQUE NOT NULL,
+                    full_name TEXT NOT NULL,
+                    sex TEXT,
+                    date_of_birth TEXT,
+                    place_of_birth TEXT,
+                    address TEXT,
+                    contact TEXT,
+                    email TEXT,
+                    max_lending_amount REAL DEFAULT 0,
+                    government_id_number TEXT,
+                    government_id_type TEXT,
+                    id_front_image TEXT,
+                    id_back_image TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+        if "borrow_card" not in existing_tables:
+            conn.execute(text("""
+                CREATE TABLE borrow_card (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    card_code TEXT UNIQUE NOT NULL,
+                    lending_account_id INTEGER NOT NULL,
+                    borrow_type TEXT DEFAULT 'sales_credit',
+                    status TEXT DEFAULT 'pending',
+                    total_amount REAL DEFAULT 0,
+                    downpayment_percentage REAL DEFAULT 0,
+                    downpayment_amount REAL DEFAULT 0,
+                    amount_paid REAL DEFAULT 0,
+                    late_fee REAL DEFAULT 0,
+                    duration_type TEXT DEFAULT 'month',
+                    duration_value INTEGER DEFAULT 1,
+                    installment_interval TEXT DEFAULT 'none',
+                    installment_value INTEGER DEFAULT 0,
+                    installment_amount REAL DEFAULT 0,
+                    total_installments INTEGER DEFAULT 0,
+                    paid_installments INTEGER DEFAULT 0,
+                    downpayment_paid BOOLEAN DEFAULT 0,
+                    next_installment_date DATETIME,
+                    late_fee_applied BOOLEAN DEFAULT 0,
+                    cancelled_at DATETIME,
+                    paid_at DATETIME,
+                    start_date DATETIME,
+                    end_date DATETIME,
+                    payment_schedule TEXT,
+                    created_by INTEGER,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (lending_account_id) REFERENCES lending_account(id),
+                    FOREIGN KEY (created_by) REFERENCES user(id)
+                )
+            """))
+            conn.commit()
+        else:
+            bc_cols = {row["name"] for row in conn.execute(text("PRAGMA table_info(borrow_card)")).mappings()}
+            bc_new = {
+                "installment_interval": "TEXT DEFAULT 'none'",
+                "installment_value": "INTEGER DEFAULT 0",
+                "installment_amount": "REAL DEFAULT 0",
+                "total_installments": "INTEGER DEFAULT 0",
+                "paid_installments": "INTEGER DEFAULT 0",
+                "downpayment_paid": "BOOLEAN DEFAULT 0",
+                "next_installment_date": "DATETIME",
+                "late_fee_applied": "BOOLEAN DEFAULT 0",
+                "cancelled_at": "DATETIME",
+                "paid_at": "DATETIME",
+            }
+            for col_name, col_def in bc_new.items():
+                if col_name not in bc_cols:
+                    conn.execute(text(f"ALTER TABLE borrow_card ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+        if "borrow_card_item" not in existing_tables:
+            conn.execute(text("""
+                CREATE TABLE borrow_card_item (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    borrow_card_id INTEGER NOT NULL,
+                    product_id INTEGER NOT NULL,
+                    product_barcode TEXT NOT NULL,
+                    product_name TEXT NOT NULL,
+                    quantity INTEGER DEFAULT 1,
+                    unit_price REAL DEFAULT 0,
+                    subtotal REAL DEFAULT 0,
+                    FOREIGN KEY (borrow_card_id) REFERENCES borrow_card(id),
+                    FOREIGN KEY (product_id) REFERENCES product(id)
+                )
+            """))
             conn.commit()
 
     with get_session() as session:
@@ -197,11 +327,18 @@ def startup_event() -> None:
             "card_button_disabled": "false",
             "store_name": "",
             "store_logo": "",
+            "store_contact1": "",
+            "store_contact2": "",
+            "store_email": "",
+            "store_website": "",
+            "store_location": "",
             "barcode_scanner_disabled": "false",
             "printer_type": "file",
             "printer_device": "",
             "bargain_enabled": "false",
             "system_logs_enabled": "true",
+            "refund_feature_enabled": "false",
+            "lending_enabled": "false",
         }
         for key, value in defaults.items():
             existing = session.exec(select(SystemSetting).where(SystemSetting.key == key)).first()
@@ -407,22 +544,36 @@ def get_settings():
         card_button_disabled = _get_setting(session, "card_button_disabled") or "false"
         store_name = _get_setting(session, "store_name") or ""
         store_logo = _get_setting(session, "store_logo") or ""
+        store_contact1 = _get_setting(session, "store_contact1") or ""
+        store_contact2 = _get_setting(session, "store_contact2") or ""
+        store_email = _get_setting(session, "store_email") or ""
+        store_website = _get_setting(session, "store_website") or ""
+        store_location = _get_setting(session, "store_location") or ""
         barcode_scanner_disabled = _get_setting(session, "barcode_scanner_disabled") or "false"
         printer_type = _get_setting(session, "printer_type") or "file"
         printer_device = _get_setting(session, "printer_device") or ""
         bargain_enabled = _get_setting(session, "bargain_enabled") or "false"
         system_logs_enabled = _get_setting(session, "system_logs_enabled") or "true"
+        refund_feature_enabled = _get_setting(session, "refund_feature_enabled") or "false"
+        lending_enabled = _get_setting(session, "lending_enabled") or "false"
     return {
         "currency": currency,
         "receipt_printing": receipt_printing,
         "card_button_disabled": card_button_disabled,
         "store_name": store_name,
         "store_logo": store_logo,
+        "store_contact1": store_contact1,
+        "store_contact2": store_contact2,
+        "store_email": store_email,
+        "store_website": store_website,
+        "store_location": store_location,
         "barcode_scanner_disabled": barcode_scanner_disabled,
         "printer_type": printer_type,
         "printer_device": printer_device,
         "bargain_enabled": bargain_enabled,
         "system_logs_enabled": system_logs_enabled,
+        "refund_feature_enabled": refund_feature_enabled,
+        "lending_enabled": lending_enabled,
     }
 
 
@@ -439,6 +590,16 @@ def update_settings(request: Request, body: dict):
             _set_setting(session, "store_name", str(body["store_name"]))
         if "store_logo" in body:
             _set_setting(session, "store_logo", str(body["store_logo"]))
+        if "store_contact1" in body:
+            _set_setting(session, "store_contact1", str(body["store_contact1"]))
+        if "store_contact2" in body:
+            _set_setting(session, "store_contact2", str(body["store_contact2"]))
+        if "store_email" in body:
+            _set_setting(session, "store_email", str(body["store_email"]))
+        if "store_website" in body:
+            _set_setting(session, "store_website", str(body["store_website"]))
+        if "store_location" in body:
+            _set_setting(session, "store_location", str(body["store_location"]))
         if "barcode_scanner_disabled" in body:
             _set_setting(session, "barcode_scanner_disabled", str(body["barcode_scanner_disabled"]))
         if "printer_type" in body:
@@ -449,6 +610,10 @@ def update_settings(request: Request, body: dict):
             _set_setting(session, "bargain_enabled", str(body["bargain_enabled"]))
         if "system_logs_enabled" in body:
             _set_setting(session, "system_logs_enabled", str(body["system_logs_enabled"]))
+        if "refund_feature_enabled" in body:
+            _set_setting(session, "refund_feature_enabled", str(body["refund_feature_enabled"]))
+        if "lending_enabled" in body:
+            _set_setting(session, "lending_enabled", str(body["lending_enabled"]))
         session.commit()
         actor, actor_id = _request_actor(request, session)
         log_activity(actor, actor_id, "UPDATE_SETTINGS", "Updated system settings: " + ", ".join(body.keys()))
@@ -696,7 +861,17 @@ def get_sales():
             sale_items = []
             for item in items:
                 product = session.get(Product, item.product_id)
+                expiry_date = ""
+                if product and product.is_batch_tracked and product.batch_id:
+                    batch = session.get(Batch, product.batch_id)
+                    if batch and batch.expiry_date:
+                        expiry_date = batch.expiry_date
+                is_refunded = session.exec(
+                    select(StoreCredit).where(StoreCredit.sale_item_id == item.id)
+                ).first() is not None
                 sale_items.append({
+                    "sale_item_id": item.id,
+                    "product_id": item.product_id,
                     "sku": product.barcode if product else "",
                     "name": product.name if product else "",
                     "description": product.description if product else "",
@@ -704,6 +879,14 @@ def get_sales():
                     "unit_price": item.unit_price,
                     "quantity": item.quantity,
                     "total_price": item.unit_price * item.quantity,
+                    "refundable": bool(product.refundable) if product else False,
+                    "credit_discount_percentage": product.credit_discount_percentage if product else 0,
+                    "credit_duration_days": product.credit_duration_days if product else 0,
+                    "expiry_date": expiry_date,
+                    "is_bulk": bool(item.is_bulk),
+                    "bulk_units": item.bulk_units,
+                    "bulk_quantity": item.bulk_quantity,
+                    "is_refunded": is_refunded,
                 })
             result.append({
                 "id": sale.id,
@@ -746,11 +929,34 @@ def create_sale(request: Request, body: dict):
             if not product:
                 raise HTTPException(status_code=404, detail=f"Product {item['product_id']} not found")
             qty = item["quantity"]
-            if product.current_stock < qty:
+            available_stock = product.current_stock - (product.on_hold or 0)
+            if available_stock < qty:
                 raise HTTPException(status_code=400, detail=f"Insufficient stock for {product.name}")
 
             unit_price = product.selling_price
             bargain_type = item.get("bargain_type")
+
+            # --- Bulk pricing ---
+            # Bulk applies only when the quantity is an exact multiple of the
+            # configured bulk quantity (e.g. 10, 20, 30... for bulk_quantity=10).
+            # bulk_price is the price per BULK PACK (e.g. a case of 10 = 80), so
+            # the line subtotal is bulk_price x number of packs. Non-multiples
+            # always use the normal selling price.
+            bulk_units = 0
+            is_bulk = False
+            bulk_qty = int(product.bulk_quantity or 0)
+            bulk_price_per_unit = None
+            bulk_line_total = None
+            if product.bulk_enabled and bulk_qty > 0 and qty >= bulk_qty and qty % bulk_qty == 0:
+                is_bulk = True
+                bulk_units = int(qty // bulk_qty)
+                bulk_price_per_unit = round(float(product.bulk_price or 0) / bulk_qty, 2)
+                bulk_line_total = round(float(product.bulk_price or 0) * bulk_units, 2)
+                if product.bulk_price is None or product.bulk_price <= 0:
+                    is_bulk = False
+                    bulk_units = 0
+                    bulk_price_per_unit = None
+                    bulk_line_total = None
 
             if "unit_price" in item and item.get("unit_price") is not None:
                 unit_price = round(float(item["unit_price"]), 2)
@@ -779,13 +985,39 @@ def create_sale(request: Request, body: dict):
                             status_code=400,
                             detail=f"Bargain price for {product.name} cannot be below {floor}",
                         )
+                # A manual unit_price overrides bulk pricing entirely.
+                is_bulk = False
+                bulk_units = 0
+                bulk_price_per_unit = None
+                bulk_line_total = None
+            elif is_bulk and bulk_price_per_unit is not None:
+                unit_price = bulk_price_per_unit
 
             product.current_stock -= qty
             session.add(product)
-            line_total = unit_price * qty
+            if is_bulk and bulk_line_total is not None:
+                line_total = bulk_line_total
+            else:
+                line_total = unit_price * qty
             total += line_total
-            sale_items.append({"product_id": product.id, "quantity": qty, "unit_price": unit_price})
-            item_details.append({"name": product.name, "qty": qty, "price": unit_price, "line_total": line_total})
+            sale_items.append({
+                "product_id": product.id,
+                "quantity": qty,
+                "unit_price": unit_price,
+                "is_bulk": is_bulk,
+                "bulk_units": bulk_units,
+                "bulk_quantity": bulk_qty if is_bulk else 0,
+            })
+            item_details.append({
+                "name": product.name,
+                "qty": qty,
+                "price": unit_price,
+                "line_total": line_total,
+                "is_bulk": is_bulk,
+                "bulk_units": bulk_units,
+                "bulk_pack_price": (round(float(product.bulk_price or 0), 2) if is_bulk else None),
+                "bulk_quantity": bulk_qty if is_bulk else 0,
+            })
 
             # Record inventory transaction
             txn = InventoryTransaction(
@@ -813,22 +1045,48 @@ def create_sale(request: Request, body: dict):
 
         for si in sale_items:
             session.add(SaleItem(sale_id=sale.id, product_id=si["product_id"],
-                                 quantity=si["quantity"], unit_price=si["unit_price"]))
+                                 quantity=si["quantity"], unit_price=si["unit_price"],
+                                 is_bulk=si.get("is_bulk", False),
+                                 bulk_units=si.get("bulk_units", 0),
+                                 bulk_quantity=si.get("bulk_quantity", 0)))
         session.commit()
 
         if receipt_printing == "true":
+            store_name = (_get_setting(session, "store_name") or "").strip() or "GENERAL STORE"
+            store_logo = (_get_setting(session, "store_logo") or "").strip()
+            store_contact = "; ".join(
+                v
+                for v in [
+                    (_get_setting(session, "store_contact1") or "").strip(),
+                    (_get_setting(session, "store_contact2") or "").strip(),
+                    (_get_setting(session, "store_email") or "").strip(),
+                    (_get_setting(session, "store_website") or "").strip(),
+                    (_get_setting(session, "store_location") or "").strip(),
+                ]
+                if v
+            )
             lines = []
             lines.append("=" * 32)
-            lines.append("       GENERAL STORE")
+            lines.append(f"       {store_name[:24]}")
             lines.append("=" * 32)
+            if store_contact:
+                lines.append(store_contact[:32])
+                lines.append("-" * 32)
             lines.append(f"Invoice: {invoice}")
             lines.append(f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}")
             lines.append(f"Cashier: {cashier.username if cashier else 'N/A'}")
             lines.append(f"Payment: {payment_method}")
             lines.append("-" * 32)
             for d in item_details:
-                lines.append(f"{d['name'][:20]:<20} {d['qty']:>3} x {currency} {d['price']:>10.2f}")
-                lines.append(f"{'':>24} {currency} {d['line_total']:>10.2f}")
+                if d.get("is_bulk"):
+                    name = f"{d['name'][:14]} (BULK)"
+                    display_qty = d.get("bulk_units") or 1
+                    pack_price = d.get("bulk_pack_price") or d["price"]
+                    lines.append(f"{name:<20} {display_qty:>3} x {currency} {pack_price:>10.2f}")
+                    lines.append(f"{'':>24} {currency} {d['line_total']:>10.2f}")
+                else:
+                    lines.append(f"{d['name'][:20]:<20} {d['qty']:>3} x {currency} {d['price']:>10.2f}")
+                    lines.append(f"{'':>24} {currency} {d['line_total']:>10.2f}")
             lines.append("-" * 32)
             lines.append(f"{'TOTAL':>24} {currency} {total:>10.2f}")
             lines.append("=" * 32)
@@ -855,6 +1113,282 @@ def create_sale(request: Request, body: dict):
             "receipt_printed": (print_status or {}).get("success") if print_status else None,
             "receipt_error": (print_status or {}).get("error") if print_status else None,
         }
+
+
+# ---------------------------------------------------------------------------
+# Refund / Store credit endpoints
+# ---------------------------------------------------------------------------
+
+def _credit_to_dict(c: StoreCredit) -> dict:
+    today = datetime.utcnow().date().isoformat()
+    status = c.status
+    is_expired = c.status == "unclaimed" and bool(c.expiry_date) and c.expiry_date < today
+    if is_expired:
+        status = "unavailable"
+    return {
+        "id": c.id,
+        "credit_code": c.credit_code,
+        "product_id": c.product_id,
+        "product_barcode": c.product_barcode,
+        "product_name": c.product_name,
+        "sale_id": c.sale_id,
+        "sale_item_id": c.sale_item_id,
+        "quantity": c.quantity,
+        "unit_price": c.unit_price,
+        "discount_percentage": c.discount_percentage,
+        "amount": c.amount,
+        "client_name": c.client_name,
+        "client_age": c.client_age,
+        "client_address": c.client_address,
+        "expiry_date": c.expiry_date,
+        "status": status,
+        "claimed_amount": c.claimed_amount,
+        "claimed_at": c.claimed_at.isoformat() if c.claimed_at else None,
+        "cancelled_at": c.cancelled_at.isoformat() if c.cancelled_at else None,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+    }
+
+
+def _make_unique_credit_code(session, credit_code: str = "") -> str:
+    candidate = credit_code.strip()
+    if not candidate:
+        candidate = generate_barcode()
+    existing = session.exec(select(StoreCredit).where(StoreCredit.credit_code == candidate)).first()
+    if existing:
+        candidate = ""
+    if candidate:
+        return candidate
+    for _ in range(20):
+        candidate = generate_barcode()
+        existing = session.exec(select(StoreCredit).where(StoreCredit.credit_code == candidate)).first()
+        if not existing:
+            return candidate
+    raise HTTPException(status_code=500, detail="Unable to generate a unique credit barcode")
+
+
+@app.post("/api/refunds")
+def create_refund(request: Request, body: dict):
+    with get_session() as session:
+        if (_get_setting(session, "refund_feature_enabled") or "false").lower() != "true":
+            raise HTTPException(status_code=400, detail="Refund feature is disabled in system settings")
+
+        sale_id = body.get("sale_id")
+        sale_item_id = body.get("sale_item_id")
+        product_id = body.get("product_id")
+        quantity = int(body.get("quantity") or 0)
+        client_name = (body.get("client_name") or "").strip()
+        client_age = (body.get("client_age") or "").strip()
+        client_address = (body.get("client_address") or "").strip()
+        credit_code = (body.get("credit_code") or "").strip()
+
+        if quantity <= 0:
+            raise HTTPException(status_code=400, detail="Refund quantity must be at least 1")
+        if not client_name:
+            raise HTTPException(status_code=400, detail="Client name is required")
+
+        sale_item = session.get(SaleItem, sale_item_id) if sale_item_id else None
+        if not sale_item:
+            raise HTTPException(status_code=404, detail="Sale item not found")
+        if quantity > sale_item.quantity:
+            raise HTTPException(status_code=400, detail=f"Refund quantity cannot exceed the sold quantity ({sale_item.quantity})")
+
+        already_refunded = session.exec(
+            select(StoreCredit).where(StoreCredit.sale_item_id == sale_item.id)
+        ).first()
+        if already_refunded:
+            remaining = sale_item.quantity - already_refunded.quantity
+            if already_refunded.quantity >= sale_item.quantity:
+                raise HTTPException(status_code=400, detail="This item has already been fully refunded")
+            if quantity > remaining:
+                raise HTTPException(status_code=400, detail=f"Only {remaining} item(s) remain refundable")
+
+        product = session.get(Product, product_id or sale_item.product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        if not product.refundable:
+            raise HTTPException(status_code=400, detail=f"Refunds are not enabled for {product.name}")
+
+        sale = session.get(Sale, sale_id) if sale_id else None
+
+        discount = max(0.0, min(100.0, float(product.credit_discount_percentage or 0)))
+        unit_price = float(sale_item.unit_price)
+        amount = round(unit_price * (1 - discount / 100.0) * quantity, 2)
+
+        expiry_date = None
+        if product.is_batch_tracked and product.batch_id:
+            batch = session.get(Batch, product.batch_id)
+            if batch and batch.expiry_date:
+                expiry_date = batch.expiry_date
+        duration_days = int(product.credit_duration_days or 0)
+        if duration_days > 0:
+            from_now = (datetime.utcnow() + timedelta(days=duration_days)).date().isoformat()
+            expiry_date = from_now if not expiry_date else min(from_now, expiry_date)
+        elif not expiry_date:
+            expiry_date = (datetime.utcnow() + timedelta(days=30)).date().isoformat()
+
+        # Restock the product with the refunded quantity
+        product.current_stock += quantity
+        product.updated_at = datetime.utcnow()
+        session.add(product)
+
+        actor, actor_id = _request_actor(request, session)
+        user_id = actor_id or 1
+
+        txn = InventoryTransaction(
+            product_id=product.id,
+            quantity_changed=quantity,
+            type="refund",
+            user_id=user_id,
+        )
+        session.add(txn)
+
+        # A refund deducts from the shop's sales revenue. Record a negative
+        # sale so the original sale stays intact and analytics reflect it.
+        refund_invoice = f"REF-{int(datetime.utcnow().timestamp() * 1000)}"
+        refund_sale = Sale(
+            invoice_number=refund_invoice,
+            total_amount=round(-amount, 2),
+            payment_method="Refund",
+            cashier_id=user_id,
+        )
+        session.add(refund_sale)
+        session.commit()
+        session.refresh(refund_sale)
+        session.add(SaleItem(
+            sale_id=refund_sale.id,
+            product_id=product.id,
+            quantity=quantity,
+            unit_price=round(-unit_price, 2),
+        ))
+
+        final_code = _make_unique_credit_code(session, credit_code)
+        credit = StoreCredit(
+            credit_code=final_code,
+            product_id=product.id,
+            product_barcode=product.barcode,
+            product_name=product.name,
+            sale_id=sale.id if sale else None,
+            sale_item_id=sale_item.id,
+            quantity=quantity,
+            unit_price=round(unit_price, 2),
+            discount_percentage=discount,
+            amount=amount,
+            client_name=client_name,
+            client_age=client_age or None,
+            client_address=client_address or None,
+            expiry_date=expiry_date,
+            status="unclaimed",
+            created_by=user_id,
+        )
+        session.add(credit)
+        session.commit()
+        session.refresh(credit)
+
+        log_activity(actor, actor_id, "CREATE_REFUND",
+                     f"Refund of {quantity} x {product.name} for {client_name} ({amount:.2f} credit, code {final_code})")
+        return _credit_to_dict(credit)
+
+
+@app.get("/api/credits")
+def get_credits(status: str = ""):
+    with get_session() as session:
+        credits = session.exec(select(StoreCredit).order_by(StoreCredit.created_at.desc())).all()
+        summary = {"unclaimed": 0.0, "unavailable": 0.0, "claimed": 0.0, "cancelled": 0.0}
+        result = []
+        for c in credits:
+            entry = _credit_to_dict(c)
+            entry_status = entry["status"]
+            summary[entry_status] = round(summary.get(entry_status, 0.0) + entry["amount"], 2)
+            if status and status != entry_status:
+                continue
+            result.append(entry)
+        return {"credits": result, "summary": summary}
+
+
+@app.get("/api/credits/lookup")
+def lookup_credit(barcode: str = ""):
+    if not barcode.strip():
+        raise HTTPException(status_code=400, detail="Credit barcode is required")
+    with get_session() as session:
+        credit = session.exec(select(StoreCredit).where(StoreCredit.credit_code == barcode.strip())).first()
+        if not credit:
+            raise HTTPException(status_code=404, detail="Credit not found for this barcode")
+        return _credit_to_dict(credit)
+
+
+@app.post("/api/credits/{credit_id}/claim")
+def claim_credit(request: Request, credit_id: int):
+    with get_session() as session:
+        credit = session.get(StoreCredit, credit_id)
+        if not credit:
+            raise HTTPException(status_code=404, detail="Credit not found")
+
+        entry = _credit_to_dict(credit)
+        if entry["status"] == "unavailable":
+            raise HTTPException(status_code=400, detail="Credit has expired and can no longer be claimed")
+        if entry["status"] == "cancelled":
+            raise HTTPException(status_code=400, detail="Credit has been cancelled and can no longer be claimed")
+        if entry["status"] == "claimed":
+            raise HTTPException(status_code=400, detail="Credit has already been claimed")
+
+        actor, actor_id = _request_actor(request, session)
+        user_id = actor_id or credit.created_by or 1
+
+        credit.status = "claimed"
+        credit.claimed_amount = credit.amount
+        credit.claimed_at = datetime.utcnow()
+        session.add(credit)
+
+        # A claimed credit is realized back into the shop's sales revenue.
+        claim_invoice = f"SCR-{int(datetime.utcnow().timestamp() * 1000)}"
+        session.add(Sale(
+            invoice_number=claim_invoice,
+            total_amount=round(credit.amount, 2),
+            payment_method="Store Credit",
+            cashier_id=user_id,
+        ))
+        session.commit()
+        session.refresh(credit)
+
+        log_activity(actor, actor_id, "CLAIM_CREDIT",
+                     f"Claimed store credit {credit.credit_code} worth {credit.amount:.2f} for {credit.client_name}")
+        return _credit_to_dict(credit)
+
+
+@app.post("/api/credits/{credit_id}/cancel")
+def cancel_credit(request: Request, credit_id: int):
+    with get_session() as session:
+        credit = session.get(StoreCredit, credit_id)
+        if not credit:
+            raise HTTPException(status_code=404, detail="Credit not found")
+
+        entry = _credit_to_dict(credit)
+        if entry["status"] == "claimed":
+            raise HTTPException(status_code=400, detail="Credit has already been claimed and cannot be cancelled")
+        if entry["status"] == "cancelled":
+            raise HTTPException(status_code=400, detail="Credit has already been cancelled")
+
+        actor, actor_id = _request_actor(request, session)
+        user_id = actor_id or credit.created_by or 1
+
+        credit.status = "cancelled"
+        credit.cancelled_at = datetime.utcnow()
+        session.add(credit)
+
+        # A cancelled credit restores its value back into the shop's revenue.
+        cancel_invoice = f"SCC-{int(datetime.utcnow().timestamp() * 1000)}"
+        session.add(Sale(
+            invoice_number=cancel_invoice,
+            total_amount=round(credit.amount, 2),
+            payment_method="Store Credit Cancelled",
+            cashier_id=user_id,
+        ))
+        session.commit()
+        session.refresh(credit)
+
+        log_activity(actor, actor_id, "CANCEL_CREDIT",
+                     f"Cancelled store credit {credit.credit_code} worth {credit.amount:.2f} for {credit.client_name}")
+        return _credit_to_dict(credit)
 
 
 # ---------------------------------------------------------------------------
@@ -911,9 +1445,26 @@ def export_activity_logs_pdf(username: str = "", action: str = "", user_id: int 
 
         pdf = FPDF()
         pdf.add_page()
+        store_name = (_get_setting(session, "store_name") or "").strip() or "General Store"
+        store_contact = "; ".join(
+            v
+            for v in [
+                (_get_setting(session, "store_contact1") or "").strip(),
+                (_get_setting(session, "store_contact2") or "").strip(),
+                (_get_setting(session, "store_email") or "").strip(),
+                (_get_setting(session, "store_website") or "").strip(),
+                (_get_setting(session, "store_location") or "").strip(),
+            ]
+            if v
+        )
         pdf.set_font("Helvetica", "B", 16)
         pdf.cell(0, 10, "System Activity Log Report", ln=True, align="C")
         pdf.ln(2)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, store_name, ln=True, align="C")
+        if store_contact:
+            pdf.set_font("Helvetica", "", 8)
+            pdf.cell(0, 5, store_contact[:90], ln=True, align="C")
         pdf.set_font("Helvetica", "", 11)
         pdf.cell(0, 7, f"User: {user_label}", ln=True)
         pdf.cell(0, 7, f"Time range: {range_label}", ln=True)
@@ -1002,9 +1553,26 @@ def user_activity_logs_pdf(user_id: int):
 
         pdf = FPDF()
         pdf.add_page()
+        store_name = (_get_setting(session, "store_name") or "").strip() or "General Store"
+        store_contact = "; ".join(
+            v
+            for v in [
+                (_get_setting(session, "store_contact1") or "").strip(),
+                (_get_setting(session, "store_contact2") or "").strip(),
+                (_get_setting(session, "store_email") or "").strip(),
+                (_get_setting(session, "store_website") or "").strip(),
+                (_get_setting(session, "store_location") or "").strip(),
+            ]
+            if v
+        )
         pdf.set_font("Helvetica", "B", 16)
         pdf.cell(0, 10, "User Activity Report", ln=True, align="C")
         pdf.ln(2)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, store_name, ln=True, align="C")
+        if store_contact:
+            pdf.set_font("Helvetica", "", 8)
+            pdf.cell(0, 5, store_contact[:90], ln=True, align="C")
         pdf.set_font("Helvetica", "", 11)
         pdf.cell(0, 7, f"User: {user.full_name or user.username}  ({user.role})", ln=True)
         pdf.cell(0, 7, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC", ln=True)
@@ -1057,10 +1625,14 @@ def lookup_product(barcode: str):
             "cost_price": product.cost_price,
             "selling_price": product.selling_price,
             "current_stock": product.current_stock,
+            "on_hold": product.on_hold or 0,
             "min_stock_level": product.min_stock_level,
             "bargain_enabled": product.bargain_enabled,
             "min_selling_price": product.min_selling_price,
             "bargain_steps": [int(x) for x in (product.bargain_steps or "").split(",") if x.strip().isdigit()],
+            "bulk_enabled": product.bulk_enabled,
+            "bulk_quantity": product.bulk_quantity,
+            "bulk_price": product.bulk_price,
         }
 
 
@@ -1082,10 +1654,14 @@ def search_products(q: str = ""):
                 "cost_price": p.cost_price,
                 "selling_price": p.selling_price,
                 "current_stock": p.current_stock,
+                "on_hold": p.on_hold or 0,
                 "min_stock_level": p.min_stock_level,
                 "bargain_enabled": p.bargain_enabled,
                 "min_selling_price": p.min_selling_price,
                 "bargain_steps": [int(x) for x in (p.bargain_steps or "").split(",") if x.strip().isdigit()],
+                "bulk_enabled": p.bulk_enabled,
+                "bulk_quantity": p.bulk_quantity,
+                "bulk_price": p.bulk_price,
             }
             for p in products
         ]
@@ -1187,6 +1763,12 @@ class ProductCreate(BaseModel):
     bargain_enabled: bool = False
     min_selling_price: float | None = None
     bargain_steps: str = ""
+    refundable: bool = False
+    credit_discount_percentage: float = 0
+    credit_duration_days: int = 0
+    bulk_enabled: bool = False
+    bulk_quantity: int = 0
+    bulk_price: float = 0
 
 
 def ean13_check_digit(body: str) -> str:
@@ -1249,6 +1831,12 @@ class ProductUpdate(BaseModel):
     bargain_enabled: bool | None = None
     min_selling_price: float | None = None
     bargain_steps: str | None = None
+    refundable: bool | None = None
+    credit_discount_percentage: float | None = None
+    credit_duration_days: int | None = None
+    bulk_enabled: bool | None = None
+    bulk_quantity: int | None = None
+    bulk_price: float | None = None
 
 
 class ProductResponse(BaseModel):
@@ -1299,6 +1887,9 @@ def get_inventory(category: str = "", stock_status: str = "", search: str = ""):
                     batch = session.get(Batch, p.batch_id)
                     if batch and batch.expiry_date and batch.expiry_date < today_str:
                         filtered_products.append(p)
+            elif stock_status == "Restock Needed":
+                if p.current_stock < p.reorder_point:
+                    filtered_products.append(p)
             elif stock_status == "" or stock_status == "All":
                 filtered_products.append(p)
 
@@ -1420,6 +2011,12 @@ def create_product(request: Request, product: ProductCreate):
             bargain_enabled=product.bargain_enabled,
             min_selling_price=product.min_selling_price,
             bargain_steps=product.bargain_steps,
+            refundable=product.refundable,
+            credit_discount_percentage=product.credit_discount_percentage,
+            credit_duration_days=product.credit_duration_days,
+            bulk_enabled=product.bulk_enabled,
+            bulk_quantity=product.bulk_quantity,
+            bulk_price=product.bulk_price,
         )
         session.add(new_product)
         session.commit()
@@ -2012,6 +2609,626 @@ async def import_sales(request: Request, file: UploadFile = File(...)):
         actor, actor_id = _request_actor(request, session)
     log_activity(actor, actor_id, "IMPORT_SALES", f"Imported {created} sales, skipped {skipped}")
     return {"message": f"Imported {created} sales, skipped {skipped}.", "created": created, "skipped": skipped}
+
+
+# ─── LENDING FEATURE ENDPOINTS ───────────────────────────────────────────────
+
+def _refresh_all_card_statuses():
+    """Apply date-driven status changes (missed installment / expired) to all active cards."""
+    with get_session() as session:
+        cards = session.exec(select(BorrowCard)).all()
+        for card in cards:
+            _auto_update_card_status(session, card)
+
+
+@app.get("/api/lending/stats")
+def lending_stats():
+    _refresh_all_card_statuses()
+    with engine.connect() as conn:
+        sc_paid = float((conn.execute(text("SELECT COALESCE(SUM(total_amount),0) as t FROM borrow_card WHERE borrow_type='sales_credit' AND status='paid'")).mappings().first() or {}).get("t", 0))
+        sc_unpaid = float((conn.execute(text("SELECT COALESCE(SUM(total_amount - amount_paid),0) as t FROM borrow_card WHERE borrow_type='sales_credit' AND status='unpaid'")).mappings().first() or {}).get("t", 0))
+        sc_expired = int((conn.execute(text("SELECT COUNT(*) as c FROM borrow_card WHERE borrow_type='sales_credit' AND status='expired'")).mappings().first() or {}).get("c", 0))
+        sc_missed = int((conn.execute(text("SELECT COUNT(*) as c FROM borrow_card WHERE borrow_type='sales_credit' AND status='missed_installment'")).mappings().first() or {}).get("c", 0))
+        sc_cancelled = int((conn.execute(text("SELECT COUNT(*) as c FROM borrow_card WHERE borrow_type='sales_credit' AND status='cancelled'")).mappings().first() or {}).get("c", 0))
+        sc_pending = int((conn.execute(text("SELECT COUNT(*) as c FROM borrow_card WHERE borrow_type='sales_credit' AND status='pending'")).mappings().first() or {}).get("c", 0))
+        lw_paid = float((conn.execute(text("SELECT COALESCE(SUM(total_amount),0) as t FROM borrow_card WHERE borrow_type='layaway' AND status='paid'")).mappings().first() or {}).get("t", 0))
+        lw_unpaid = float((conn.execute(text("SELECT COALESCE(SUM(total_amount - amount_paid),0) as t FROM borrow_card WHERE borrow_type='layaway' AND status='unpaid'")).mappings().first() or {}).get("t", 0))
+        lw_expired = int((conn.execute(text("SELECT COUNT(*) as c FROM borrow_card WHERE borrow_type='layaway' AND status='expired'")).mappings().first() or {}).get("c", 0))
+        lw_missed = int((conn.execute(text("SELECT COUNT(*) as c FROM borrow_card WHERE borrow_type='layaway' AND status='missed_installment'")).mappings().first() or {}).get("c", 0))
+        lw_cancelled = int((conn.execute(text("SELECT COUNT(*) as c FROM borrow_card WHERE borrow_type='layaway' AND status='cancelled'")).mappings().first() or {}).get("c", 0))
+        lw_pending = int((conn.execute(text("SELECT COUNT(*) as c FROM borrow_card WHERE borrow_type='layaway' AND status='pending'")).mappings().first() or {}).get("c", 0))
+    return {
+        "sales_credit": {"amount_paid": sc_paid, "amount_unpaid": sc_unpaid, "expired": sc_expired, "missed_installment": sc_missed, "cancelled": sc_cancelled, "pending": sc_pending},
+        "layaway": {"amount_paid": lw_paid, "amount_unpaid": lw_unpaid, "expired": lw_expired, "missed_installment": lw_missed, "cancelled": lw_cancelled, "pending": lw_pending},
+    }
+
+
+@app.get("/api/lending/accounts/search")
+def search_lending_accounts(q: str = "", status: str = ""):
+    with get_session() as session:
+        if q.strip():
+            like = f"%{q.strip()}%"
+            accounts = session.exec(
+                select(LendingAccount).where(
+                    (LendingAccount.full_name.contains(q.strip())) |
+                    (LendingAccount.government_id_number.contains(q.strip())) |
+                    (LendingAccount.barcode.contains(q.strip()))
+                )
+            ).all()
+        else:
+            accounts = session.exec(select(LendingAccount)).all()
+
+        results = []
+        for acc in accounts:
+            acc_dict = {
+                "id": acc.id, "barcode": acc.barcode, "full_name": acc.full_name,
+                "sex": acc.sex, "date_of_birth": acc.date_of_birth,
+                "place_of_birth": acc.place_of_birth, "address": acc.address,
+                "contact": acc.contact, "email": acc.email,
+                "max_lending_amount": acc.max_lending_amount,
+                "outstanding_amount": 0.0,
+                "government_id_number": acc.government_id_number,
+                "government_id_type": acc.government_id_type,
+                "id_front_image": acc.id_front_image, "id_back_image": acc.id_back_image,
+                "created_at": acc.created_at.isoformat() if acc.created_at else None,
+                "borrow_cards": [],
+            }
+            cards = session.exec(
+                select(BorrowCard).where(BorrowCard.lending_account_id == acc.id)
+            ).all()
+            for card in cards:
+                _auto_update_card_status(session, card)
+            acc_dict["outstanding_amount"] = round(
+                sum(
+                    max(0, float(c.total_amount) - float(c.amount_paid))
+                    for c in cards if c.status not in ("paid", "cancelled")
+                ),
+                2,
+            )
+            for card in cards:
+                if status.strip() and card.status != status.strip():
+                    continue
+                acc_dict["borrow_cards"].append({
+                    "id": card.id, "card_code": card.card_code,
+                    "borrow_type": card.borrow_type, "status": card.status,
+                    "total_amount": card.total_amount,
+                    "downpayment_percentage": card.downpayment_percentage,
+                    "downpayment_amount": card.downpayment_amount,
+                    "amount_paid": card.amount_paid, "late_fee": card.late_fee,
+                    "late_fee_applied": card.late_fee_applied,
+                    "next_installment_date": card.next_installment_date.isoformat() if card.next_installment_date else None,
+                    "duration_type": card.duration_type, "duration_value": card.duration_value,
+                    "installment_interval": card.installment_interval,
+                    "installment_value": card.installment_value,
+                    "installment_amount": card.installment_amount,
+                    "total_installments": card.total_installments,
+                    "paid_installments": card.paid_installments,
+                    "downpayment_paid": card.downpayment_paid,
+                    "start_date": card.start_date.isoformat() if card.start_date else None,
+                    "end_date": card.end_date.isoformat() if card.end_date else None,
+                    "created_at": card.created_at.isoformat() if card.created_at else None,
+                })
+            results.append(acc_dict)
+    return results
+
+
+@app.post("/api/lending/accounts")
+def create_lending_account(request: Request, data: dict):
+    import uuid
+    barcode = f"LEN{uuid.uuid4().hex[:10].upper()}"
+    with get_session() as session:
+        existing = session.exec(select(LendingAccount).where(LendingAccount.government_id_number == data.get("government_id_number"))).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="A lending account with this Government ID number already exists.")
+        acc = LendingAccount(
+            barcode=barcode,
+            full_name=data.get("full_name", ""),
+            sex=data.get("sex", ""),
+            date_of_birth=data.get("date_of_birth", ""),
+            place_of_birth=data.get("place_of_birth", ""),
+            address=data.get("address", ""),
+            contact=data.get("contact", ""),
+            email=data.get("email", ""),
+            max_lending_amount=float(data.get("max_lending_amount", 0)),
+            government_id_number=data.get("government_id_number", ""),
+            government_id_type=data.get("government_id_type", ""),
+            id_front_image=data.get("id_front_image", ""),
+            id_back_image=data.get("id_back_image", ""),
+        )
+        session.add(acc)
+        session.commit()
+        session.refresh(acc)
+        actor, actor_id = _request_actor(request, session)
+        log_activity(actor, actor_id, "LENDING_ACCOUNT_CREATE", f"Created lending account {acc.full_name} ({barcode})")
+        return {"id": acc.id, "barcode": acc.barcode, "message": "Lending account created successfully."}
+
+
+@app.get("/api/lending/accounts/{account_id}")
+def get_lending_account(account_id: int):
+    with get_session() as session:
+        acc = session.get(LendingAccount, account_id)
+        if not acc:
+            raise HTTPException(status_code=404, detail="Lending account not found.")
+        cards = session.exec(select(BorrowCard).where(BorrowCard.lending_account_id == acc.id)).all()
+        for c in cards:
+            _auto_update_card_status(session, c)
+        return {
+            "id": acc.id, "barcode": acc.barcode, "full_name": acc.full_name,
+            "sex": acc.sex, "date_of_birth": acc.date_of_birth,
+            "place_of_birth": acc.place_of_birth, "address": acc.address,
+            "contact": acc.contact, "email": acc.email,
+            "max_lending_amount": acc.max_lending_amount,
+            "government_id_number": acc.government_id_number,
+            "government_id_type": acc.government_id_type,
+            "id_front_image": acc.id_front_image, "id_back_image": acc.id_back_image,
+            "created_at": acc.created_at.isoformat() if acc.created_at else None,
+            "borrow_cards": [{
+                "id": c.id, "card_code": c.card_code, "borrow_type": c.borrow_type,
+                "status": c.status, "total_amount": c.total_amount,
+                "amount_paid": c.amount_paid, "late_fee": c.late_fee,
+                "late_fee_applied": c.late_fee_applied,
+                "next_installment_date": c.next_installment_date.isoformat() if c.next_installment_date else None,
+                "duration_type": c.duration_type, "duration_value": c.duration_value,
+                "installment_interval": c.installment_interval,
+                "installment_value": c.installment_value,
+                "installment_amount": c.installment_amount,
+                "total_installments": c.total_installments,
+                "paid_installments": c.paid_installments,
+                "downpayment_paid": c.downpayment_paid,
+                "start_date": c.start_date.isoformat() if c.start_date else None,
+                "end_date": c.end_date.isoformat() if c.end_date else None,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            } for c in cards],
+        }
+
+
+@app.put("/api/lending/accounts/{account_id}")
+def update_lending_account(account_id: int, data: dict):
+    with get_session() as session:
+        acc = session.get(LendingAccount, account_id)
+        if not acc:
+            raise HTTPException(status_code=404, detail="Lending account not found.")
+        if "full_name" in data: acc.full_name = data["full_name"]
+        if "sex" in data: acc.sex = data["sex"]
+        if "date_of_birth" in data: acc.date_of_birth = data["date_of_birth"]
+        if "place_of_birth" in data: acc.place_of_birth = data["place_of_birth"]
+        if "address" in data: acc.address = data["address"]
+        if "contact" in data: acc.contact = data["contact"]
+        if "email" in data: acc.email = data["email"]
+        if "max_lending_amount" in data: acc.max_lending_amount = float(data["max_lending_amount"])
+        if "government_id_number" in data: acc.government_id_number = data["government_id_number"]
+        if "government_id_type" in data: acc.government_id_type = data["government_id_type"]
+        if "id_front_image" in data: acc.id_front_image = data["id_front_image"]
+        if "id_back_image" in data: acc.id_back_image = data["id_back_image"]
+        acc.updated_at = datetime.utcnow()
+        session.add(acc)
+        session.commit()
+    return {"message": "Lending account updated."}
+
+
+@app.delete("/api/lending/accounts/{account_id}")
+def delete_lending_account(account_id: int):
+    with get_session() as session:
+        acc = session.get(LendingAccount, account_id)
+        if not acc:
+            raise HTTPException(status_code=404, detail="Lending account not found.")
+        cards = session.exec(select(BorrowCard).where(BorrowCard.lending_account_id == acc.id)).all()
+        for card in cards:
+            items = session.exec(select(BorrowCardItem).where(BorrowCardItem.borrow_card_id == card.id)).all()
+            for item in items:
+                session.delete(item)
+            session.delete(card)
+        session.delete(acc)
+        session.commit()
+    return {"message": "Lending account deleted."}
+
+
+def _borrow_interval_days(unit: str, value: int) -> int:
+    """Convert a duration/interval unit + value into days (30-day months)."""
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        value = 0
+    if unit == "day":
+        return value
+    if unit == "month":
+        return value * 30
+    if unit == "year":
+        return value * 365
+    return 0
+
+
+def _auto_update_card_status(session, card):
+    """
+    Lazily apply date-driven status changes:
+    - Not fully paid past the lending end date  -> expired
+    - Not updated (no payment) past the next installment date -> missed_installment
+    Persists any change and returns the updated status.
+    """
+    if not card or card.status in ("paid", "cancelled"):
+        return card.status if card else None
+    now = datetime.utcnow()
+    changed = False
+    if card.end_date and now > card.end_date and card.amount_paid < card.total_amount:
+        if card.status != "expired":
+            card.status = "expired"
+            changed = True
+    elif (
+        card.next_installment_date
+        and card.total_installments > 0
+        and now > card.next_installment_date
+        and card.amount_paid < card.total_amount
+    ):
+        if card.status not in ("expired",):
+            card.status = "missed_installment"
+            changed = True
+    if changed:
+        card.updated_at = now
+        session.add(card)
+        session.commit()
+    return card.status
+
+
+@app.post("/api/lending/cards")
+def create_borrow_card(request: Request, data: dict):
+    import uuid
+    card_code = f"BC{uuid.uuid4().hex[:10].upper()}"
+    account_id = data.get("lending_account_id")
+    items_data = data.get("items", [])
+    if not account_id or not items_data:
+        raise HTTPException(status_code=400, detail="Account and items are required.")
+
+    with get_session() as session:
+        acc = session.get(LendingAccount, account_id)
+        if not acc:
+            raise HTTPException(status_code=404, detail="Lending account not found.")
+
+        actor, actor_id = _request_actor(request, session)
+        total = round(sum(item.get("quantity", 1) * item.get("unit_price", 0) for item in items_data), 2)
+
+        outstanding = sum(
+            max(0, float(c.total_amount) - float(c.amount_paid))
+            for c in session.exec(select(BorrowCard).where(BorrowCard.lending_account_id == acc.id)).all()
+            if c.status not in ("paid", "cancelled")
+        )
+        if acc.max_lending_amount and (total + outstanding) > acc.max_lending_amount:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Borrow total ({total}) plus outstanding balance ({outstanding}) exceeds the borrower's max lending amount ({acc.max_lending_amount}).",
+            )
+
+        downpayment_pct = float(data.get("downpayment_percentage", 0))
+        downpayment_amount = round(total * downpayment_pct / 100, 2)
+
+        now = datetime.utcnow()
+        duration_type = data.get("duration_type", "month")
+        duration_value = int(data.get("duration_value", 1))
+        duration_days = _borrow_interval_days(duration_type, duration_value) or 30
+        end_date = now + timedelta(days=duration_days)
+
+        borrow_type = data.get("borrow_type", "sales_credit")
+        installment_interval = data.get("installment_interval", "none")
+        installment_value = int(data.get("installment_value", 0))
+
+        balance = round(total - downpayment_amount, 2)
+        total_installments = 0
+        installment_amount = 0.0
+        next_installment_date = None
+        interval_days = _borrow_interval_days(installment_interval, installment_value)
+        if interval_days > 0:
+            total_installments = max(1, round(duration_days / interval_days))
+            installment_amount = round(balance / total_installments, 2)
+            next_installment_date = now + timedelta(days=interval_days)
+
+        card = BorrowCard(
+            card_code=card_code,
+            lending_account_id=account_id,
+            borrow_type=borrow_type,
+            status="pending",
+            total_amount=total,
+            downpayment_percentage=downpayment_pct,
+            downpayment_amount=downpayment_amount,
+            amount_paid=downpayment_amount,
+            late_fee=float(data.get("late_fee", 0)),
+            duration_type=duration_type,
+            duration_value=duration_value,
+            installment_interval=installment_interval,
+            installment_value=installment_value,
+            installment_amount=installment_amount,
+            total_installments=total_installments,
+            paid_installments=0,
+            downpayment_paid=downpayment_amount > 0,
+            next_installment_date=next_installment_date,
+            start_date=now,
+            end_date=end_date,
+            created_by=actor_id,
+        )
+        session.add(card)
+        session.flush()
+
+        for item in items_data:
+            product_id = item.get("product_id")
+            product = session.get(Product, product_id)
+            if not product:
+                continue
+            qty = int(item.get("quantity", 1))
+            unit_price = float(item.get("unit_price", product.selling_price))
+            bci = BorrowCardItem(
+                borrow_card_id=card.id,
+                product_id=product_id,
+                product_barcode=product.barcode,
+                product_name=product.name,
+                quantity=qty,
+                unit_price=unit_price,
+                subtotal=qty * unit_price,
+            )
+            session.add(bci)
+
+            if borrow_type == "layaway":
+                available = product.current_stock - (product.on_hold or 0)
+                if qty > available:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Not enough available stock for '{product.name}' (available: {available}).",
+                    )
+                product.on_hold = (product.on_hold or 0) + qty
+                session.add(product)
+            elif borrow_type == "sales_credit":
+                available = product.current_stock - (product.on_hold or 0)
+                if qty > available:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Not enough available stock for '{product.name}' (available: {available}).",
+                    )
+                product.current_stock = max(0, product.current_stock - qty)
+                session.add(InventoryTransaction(
+                    product_id=product.id,
+                    quantity_changed=-qty,
+                    type="sale",
+                    user_id=actor_id or 0,
+                ))
+
+        session.commit()
+        session.refresh(card)
+        log_activity(actor, actor_id, "BORROW_CARD_CREATE", f"Created borrow card {card_code} for {acc.full_name} ({borrow_type})")
+        return {
+            "id": card.id, "card_code": card.card_code, "total": total,
+            "downpayment_amount": downpayment_amount, "amount_due": balance,
+            "installment_amount": installment_amount, "total_installments": total_installments,
+            "next_installment_date": next_installment_date.isoformat() if next_installment_date else None,
+            "message": "Borrow card created successfully.",
+        }
+
+
+@app.get("/api/lending/cards/{card_id}")
+def get_borrow_card(card_id: int):
+    with get_session() as session:
+        card = session.get(BorrowCard, card_id)
+        if not card:
+            raise HTTPException(status_code=404, detail="Borrow card not found.")
+        _auto_update_card_status(session, card)
+        items = session.exec(select(BorrowCardItem).where(BorrowCardItem.borrow_card_id == card.id)).all()
+        acc = session.get(LendingAccount, card.lending_account_id)
+        return {
+            "id": card.id, "card_code": card.card_code,
+            "lending_account_id": card.lending_account_id,
+            "borrower_name": acc.full_name if acc else "",
+            "borrow_type": card.borrow_type, "status": card.status,
+            "total_amount": card.total_amount,
+            "downpayment_percentage": card.downpayment_percentage,
+            "downpayment_amount": card.downpayment_amount,
+            "amount_paid": card.amount_paid, "late_fee": card.late_fee,
+            "late_fee_applied": card.late_fee_applied,
+            "amount_due": round(float(card.total_amount) - float(card.amount_paid), 2),
+            "duration_type": card.duration_type, "duration_value": card.duration_value,
+            "installment_interval": card.installment_interval,
+            "installment_value": card.installment_value,
+            "installment_amount": card.installment_amount,
+            "total_installments": card.total_installments,
+            "paid_installments": card.paid_installments,
+            "downpayment_paid": card.downpayment_paid,
+            "next_installment_date": card.next_installment_date.isoformat() if card.next_installment_date else None,
+            "cancelled_at": card.cancelled_at.isoformat() if card.cancelled_at else None,
+            "paid_at": card.paid_at.isoformat() if card.paid_at else None,
+            "start_date": card.start_date.isoformat() if card.start_date else None,
+            "end_date": card.end_date.isoformat() if card.end_date else None,
+            "created_at": card.created_at.isoformat() if card.created_at else None,
+            "items": [{
+                "id": it.id, "product_id": it.product_id,
+                "product_barcode": it.product_barcode, "product_name": it.product_name,
+                "quantity": it.quantity, "unit_price": it.unit_price, "subtotal": it.subtotal,
+            } for it in items],
+        }
+
+
+@app.put("/api/lending/cards/{card_id}/status")
+def update_card_status(card_id: int, data: dict):
+    new_status = data.get("status", "")
+    valid = ["pending", "paid", "unpaid", "missed_installment", "expired", "cancelled"]
+    if new_status not in valid:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid)}")
+    with get_session() as session:
+        card = session.get(BorrowCard, card_id)
+        if not card:
+            raise HTTPException(status_code=404, detail="Borrow card not found.")
+        _auto_update_card_status(session, card)
+        if card.status in ("paid", "cancelled") and new_status != card.status:
+            raise HTTPException(status_code=400, detail=f"Cannot change status of a {card.status} borrow card.")
+
+        if new_status == "cancelled":
+            items = session.exec(select(BorrowCardItem).where(BorrowCardItem.borrow_card_id == card.id)).all()
+            for it in items:
+                product = session.get(Product, it.product_id)
+                if not product:
+                    continue
+                if card.borrow_type == "layaway":
+                    product.on_hold = max(0, (product.on_hold or 0) - it.quantity)
+                else:
+                    product.current_stock = product.current_stock + it.quantity
+                    session.add(InventoryTransaction(
+                        product_id=product.id, quantity_changed=it.quantity,
+                        type="restock", user_id=card.created_by or 0,
+                    ))
+                session.add(product)
+            card.cancelled_at = datetime.utcnow()
+            card.next_installment_date = None
+
+        if new_status == "paid":
+            card.amount_paid = card.total_amount
+            card.downpayment_paid = True
+            card.paid_installments = card.total_installments
+            card.next_installment_date = None
+            card.paid_at = datetime.utcnow()
+            _finalize_borrow_card_sale(session, card)
+
+        card.status = new_status
+        card.updated_at = datetime.utcnow()
+        session.add(card)
+        session.commit()
+        result_total_amount = card.total_amount
+    return {"message": f"Card status updated to {new_status}.", "status": new_status, "total_amount": result_total_amount}
+
+
+@app.put("/api/lending/cards/{card_id}/payment")
+def record_payment(card_id: int, data: dict):
+    amount = float(data.get("amount", 0))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be positive.")
+    with get_session() as session:
+        card = session.get(BorrowCard, card_id)
+        if not card:
+            raise HTTPException(status_code=404, detail="Borrow card not found.")
+        if card.status in ("paid", "cancelled"):
+            raise HTTPException(status_code=400, detail="Cannot record payment on a paid or cancelled card.")
+
+        _auto_update_card_status(session, card)
+
+        # Late fee is applied when the borrower finally updates a
+        # missed-installment / expired card (added once to the total).
+        fee_added = 0.0
+        if card.status in ("missed_installment", "expired") and not card.late_fee_applied and card.late_fee > 0:
+            card.total_amount = round(card.total_amount + card.late_fee, 2)
+            card.late_fee_applied = True
+            fee_added = card.late_fee
+
+        card.amount_paid = round(card.amount_paid + amount, 2)
+        if not card.downpayment_paid and card.amount_paid >= card.downpayment_amount:
+            card.downpayment_paid = True
+        if card.downpayment_paid and card.total_installments > 0:
+            paid_full_inst = max(0, card.amount_paid - card.downpayment_amount)
+            card.paid_installments = min(card.total_installments, int(paid_full_inst // card.installment_amount) if card.installment_amount > 0 else 0)
+        elif card.downpayment_paid and card.total_installments == 0:
+            card.paid_installments = 1 if card.amount_paid > card.downpayment_amount else 0
+
+        # Next installment due date, recomputed from the paid installment count.
+        interval_days = _borrow_interval_days(card.installment_interval, card.installment_value)
+        if interval_days > 0 and card.total_installments > 0:
+            base = card.start_date or datetime.utcnow()
+            if card.paid_installments >= card.total_installments:
+                card.next_installment_date = None
+            else:
+                card.next_installment_date = base + timedelta(days=interval_days * (card.paid_installments + 1))
+
+        if card.amount_paid >= card.total_amount:
+            card.status = "paid"
+            card.amount_paid = card.total_amount
+            card.downpayment_paid = True
+            card.paid_installments = card.total_installments
+            card.next_installment_date = None
+            card.paid_at = datetime.utcnow()
+            _finalize_borrow_card_sale(session, card)
+        else:
+            # The card stays pending until fully paid, even after installments.
+            card.status = "pending"
+
+        card.updated_at = datetime.utcnow()
+        session.add(card)
+        session.commit()
+        result_amount_paid = card.amount_paid
+        result_status = card.status
+        result_paid_installments = card.paid_installments
+    return {
+        "message": "Payment recorded.",
+        "amount_paid": result_amount_paid,
+        "status": result_status,
+        "paid_installments": result_paid_installments,
+        "late_fee_added": fee_added,
+    }
+
+
+@app.put("/api/lending/cards/{card_id}/extend")
+def extend_borrow_card(card_id: int, data: dict):
+    new_end_date_raw = data.get("end_date")
+    if not new_end_date_raw:
+        raise HTTPException(status_code=400, detail="New end date is required.")
+    with get_session() as session:
+        card = session.get(BorrowCard, card_id)
+        if not card:
+            raise HTTPException(status_code=404, detail="Borrow card not found.")
+        if card.status in ("paid", "cancelled"):
+            raise HTTPException(status_code=400, detail="Cannot extend a paid or cancelled borrow card.")
+        if isinstance(new_end_date_raw, str):
+            try:
+                if len(new_end_date_raw) == 10:
+                    new_end = datetime.strptime(new_end_date_raw, "%Y-%m-%d")
+                else:
+                    new_end = datetime.fromisoformat(new_end_date_raw)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid end date format.")
+        else:
+            new_end = new_end_date_raw
+        if new_end <= datetime.utcnow():
+            raise HTTPException(status_code=400, detail="New end date must be in the future.")
+        card.end_date = new_end
+        if card.status in ("expired", "missed_installment"):
+            card.status = "pending"
+        card.updated_at = datetime.utcnow()
+        session.add(card)
+        session.commit()
+        log_activity("", card.created_by, "BORROW_CARD_EXTEND", f"Extended borrow card {card.card_code} to {new_end.isoformat()}")
+        return {"message": "Borrow card extended.", "end_date": new_end.isoformat(), "status": card.status}
+
+
+def _finalize_borrow_card_sale(session, card):
+    """Create the sale record for a fully paid borrow card and release inventory."""
+    items = session.exec(select(BorrowCardItem).where(BorrowCardItem.borrow_card_id == card.id)).all()
+    user = session.get(User, card.created_by)
+    cashier_username = user.username if user else ""
+    invoice = f"LC{int(datetime.utcnow().timestamp()*1000)}"
+    sale = Sale(
+        invoice_number=invoice,
+        total_amount=card.total_amount,
+        payment_method="Sales Credit" if card.borrow_type == "sales_credit" else "Layaway",
+        cashier_id=card.created_by or 1,
+    )
+    session.add(sale)
+    session.flush()
+    for it in items:
+        session.add(SaleItem(
+            sale_id=sale.id, product_id=it.product_id,
+            quantity=it.quantity, unit_price=it.unit_price,
+        ))
+        if card.borrow_type == "layaway":
+            product = session.get(Product, it.product_id)
+            if product:
+                product.on_hold = max(0, (product.on_hold or 0) - it.quantity)
+                product.current_stock = max(0, product.current_stock - it.quantity)
+                session.add(InventoryTransaction(
+                    product_id=product.id, quantity_changed=-it.quantity,
+                    type="sale", user_id=card.created_by or 0,
+                ))
+    log_activity(cashier_username, card.created_by, "SALE", f"{card.borrow_type} payment completed: {card.card_code} → Sale {invoice}")
+
+
+@app.get("/api/lending/cards/{card_id}/items")
+def get_card_items(card_id: int):
+    with get_session() as session:
+        items = session.exec(select(BorrowCardItem).where(BorrowCardItem.borrow_card_id == card_id)).all()
+        return [{
+            "id": it.id, "product_id": it.product_id,
+            "product_barcode": it.product_barcode, "product_name": it.product_name,
+            "quantity": it.quantity, "unit_price": it.unit_price, "subtotal": it.subtotal,
+        } for it in items]
 
 
 # Mount static frontend AFTER all API routes so /api/* routes always take priority
