@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getAuth } from "../services/auth";
+import { fetchStoreBranding, brandingContactLines } from "../components/creditsShared";
 
 interface User {
   id: number;
@@ -712,9 +713,11 @@ function TimeTracking({ users }: { users: User[] }) {
     return new Date(iso).toLocaleString();
   };
 
-  const handlePrintPDF = () => {
+  const handlePrintPDF = async () => {
     const user = users.find((u) => u.id === selectedUserId);
     const userName = user?.full_name || user?.username || "Unknown";
+    const branding = await fetchStoreBranding();
+    const contactHtml = brandingContactLines(branding).join(" · ");
 
     const rows = sessions
       .map(
@@ -740,6 +743,10 @@ function TimeTracking({ users }: { users: User[] }) {
           .total{margin-top:20px;font-weight:bold;font-size:1.1em}
         </style></head>
         <body>
+          <div style="text-align:center;margin-bottom:16px;">
+            <div style="font-size:20px;font-weight:bold;color:#333;">${branding.storeName}</div>
+            <div style="font-size:11px;color:#666;margin-top:2px;">${contactHtml}</div>
+          </div>
           <h1>Work Sessions Report</h1>
           <p><strong>User:</strong> ${userName}</p>
           <p><strong>Report Date:</strong> ${new Date().toLocaleString()}</p>
