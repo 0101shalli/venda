@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, ReactNode } from "react";
 import ProductModal, { Product } from "../components/ProductModal";
 import BarcodeModal from "../components/BarcodeModal";
 import MetaModal from "../components/MetaModal";
+import PrintLabelsModal from "../components/PrintLabelsModal";
 import { useCurrency } from "../context/CurrencyContext";
 
 type InventoryStat = {
@@ -17,7 +18,7 @@ type InventoryStat = {
 };
 
 const CATEGORIES = ["All", "General", "Electronics", "Logistics", "Apparel", "Food & Beverage", "Hardware"];
-const STOCK_STATUSES = ["All", "In Stock", "Low Stock", "Out of Stock", "Expired"];
+const STOCK_STATUSES = ["All", "In Stock", "Low Stock", "Out of Stock", "Expired", "Restock Needed"];
 
 // Simple fuzzy search algorithm
 function fuzzySearch(query: string, text: string): boolean {
@@ -53,6 +54,7 @@ export default function InventoryPage() {
   const [selectedProductForBarcode, setSelectedProductForBarcode] = useState<Product | null>(null);
   const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
   const [selectedProductForMeta, setSelectedProductForMeta] = useState<Product | null>(null);
+  const [isPrintLabelsOpen, setIsPrintLabelsOpen] = useState(false);
 
   // Fetch inventory data
   const fetchInventory = async () => {
@@ -287,19 +289,31 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          {/* Add Product Button */}
-          <button
-            onClick={() => {
-              setEditingProduct(null);
-              setIsModalOpen(true);
-            }}
-            className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform whitespace-nowrap"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Product
-          </button>
+          {/* Print Labels + Add Product Buttons */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setIsPrintLabelsOpen(true)}
+              className="flex items-center justify-center gap-2 rounded-lg border border-indigo-600 dark:border-sky-500 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-indigo-600 dark:text-sky-400 hover:bg-indigo-50 dark:hover:bg-slate-700 active:scale-95 transition-transform whitespace-nowrap"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Print Labels
+            </button>
+
+            <button
+              onClick={() => {
+                setEditingProduct(null);
+                setIsModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform whitespace-nowrap"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Product
+            </button>
+          </div>
         </div>
       </div>
 
@@ -447,6 +461,12 @@ export default function InventoryPage() {
           setIsBarcodeModalOpen(false);
           setSelectedProductForBarcode(null);
         }}
+      />
+
+      {/* Print Labels Modal */}
+      <PrintLabelsModal
+        isOpen={isPrintLabelsOpen}
+        onClose={() => setIsPrintLabelsOpen(false)}
       />
 
       {/* Meta Modal */}
