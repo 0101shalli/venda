@@ -10,14 +10,15 @@ import AnalyticsPage from "./pages/AnalyticsPage";
 import UserManagementPage from "./pages/UserManagementPage";
 import SettingsPage from "./pages/SettingsPage";
 import OrdersPage from "./pages/OrdersPage";
+import LendingPage from "./pages/LendingPage";
 import ChangePasswordModal from "./components/ChangePasswordModal";
 import { fetchWithAuthInterceptors, getAuth, setAuth, clearAuth, AuthData } from "./services/auth";
 
 const routePermissions: Record<string, string[]> = {
   cashier: ["/sales", "/orders", "/settings"],
-  manager1: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings"],
-  manager2: ["/sales", "/orders", "/analytics", "/settings"],
-  admin: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings"],
+  manager1: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings", "/lending"],
+  manager2: ["/sales", "/orders", "/analytics", "/settings", "/lending"],
+  admin: ["/sales", "/orders", "/inventory", "/analytics", "/users", "/settings", "/lending"],
 };
 
 function App() {
@@ -93,6 +94,7 @@ function App() {
           <Route path="/analytics" element={allowedRoutes.includes("/analytics") ? <AnalyticsPage /> : <Navigate to="/sales" />} />
           <Route path="/users" element={allowedRoutes.includes("/users") ? <UserManagementPage /> : <Navigate to="/sales" />} />
           <Route path="/settings" element={allowedRoutes.includes("/settings") ? <SettingsPage /> : <Navigate to="/sales" />} />
+          <Route path="/lending" element={allowedRoutes.includes("/lending") ? <LendingPage /> : <Navigate to="/sales" />} />
           <Route path="*" element={<Navigate to="/sales" />} />
         </Routes>
       </main>
