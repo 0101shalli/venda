@@ -3,6 +3,7 @@ import JsBarcode from "jsbarcode";
 import { Product } from "./ProductModal";
 import { useCurrency } from "../context/CurrencyContext";
 import { barcodeFormat } from "../utils/barcode";
+import { fetchStoreBranding, printBrandingHeaderHtml, printBrandingFooterHtml } from "./creditsShared";
 
 type BarcodeModalProps = {
   isOpen: boolean;
@@ -33,7 +34,10 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
 
   if (!isOpen || !product) return null;
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    const branding = await fetchStoreBranding();
+    const logoHtml = printBrandingHeaderHtml(branding.storeLogo);
+    const footerHtml = printBrandingFooterHtml(branding);
     const printWindow = window.open("", "", "height=450,width=600");
     if (!printWindow) return;
 
@@ -74,14 +78,24 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
           .product-info { font-size: 14px; text-transform: uppercase; color: #666; }
           .product-name { font-weight: bold; font-size: 18px; margin-top: 10px; }
           .product-price { font-size: 20px; font-weight: bold; color: #000; margin-top: 10px; }
+          .brand-header { text-align:center; margin-bottom:12px; }
+          .brand-header img { max-height:44px; max-width:110px; object-fit:contain; display:block; margin:0 auto 4px; }
+          .brand-name { font-size:11px; color:#475569; letter-spacing:1px; }
         </style>
       </head>
       <body>
-        <div class="barcode-container">
-          <div class="product-info">${product.category}</div>
-          <div class="product-name">${product.name}</div>
-          <div class="barcode-image">${barcodeSVGString}</div>
-          <div class="product-price">${formatPrice(product.selling_price)}</div>
+        <div style="width:4in;">
+          <div class="brand-header">
+            ${logoHtml}
+            <div class="brand-name">${branding.storeName}</div>
+          </div>
+          <div class="barcode-container">
+            <div class="product-info">${product.category}</div>
+            <div class="product-name">${product.name}</div>
+            <div class="barcode-image">${barcodeSVGString}</div>
+            <div class="product-price">${formatPrice(product.selling_price)}</div>
+          </div>
+          ${footerHtml}
         </div>
         <script>
           window.onload = function() {
@@ -158,26 +172,6 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
           </div>
           <div className="text-2xl font-black text-sky-600">
             {formatPrice(product.selling_price)}
-          </div>
-        </div>
-
-        {/* Product Details */}
-        <div className="grid grid-cols-2 gap-3 mb-6 bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-          <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase">Cost</p>
-            <p className="font-bold text-slate-900 dark:text-white">{formatPrice(product.cost_price)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase">Stock</p>
-            <p className="font-bold text-slate-900 dark:text-white">{product.current_stock}</p>
-          </div>
-          <div className="col-span-2">
-            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase">Supplier</p>
-            <p className="font-bold text-slate-900 dark:text-white text-sm">{product.supplier || "N/A"}</p>
-          </div>
-          <div className="col-span-2">
-            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase">Warehouse</p>
-            <p className="font-bold text-slate-900 dark:text-white text-sm">{product.warehouse_location || "N/A"}</p>
           </div>
         </div>
 
