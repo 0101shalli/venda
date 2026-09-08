@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { useCurrency } from "../context/CurrencyContext";
+import { fetchStoreBranding, brandingContactLines } from "../components/creditsShared";
 
 interface RevenueTrend {
   date: string;
@@ -51,17 +52,20 @@ function exportToExcel(headers: string[], rows: (string | number)[][], filename:
 
 function printChartAsPdf(title: string, svgElement: Element | null) {
   if (!svgElement) return;
-  const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
-  svgClone.setAttribute("width", "800");
-  svgClone.setAttribute("height", "400");
-  const svgString = new XMLSerializer().serializeToString(svgClone);
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) return;
-  printWindow.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
-    <style>@page{size:landscape;margin:1cm}body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif}h1{font-size:18px;margin-bottom:8px;color:#1e293b}.chart-container{width:100%}svg{width:100%;height:auto}@media print{body{padding:0}}</style></head><body>
-    <h1>${title}</h1><div class="chart-container">${svgString}</div>
-    <script>window.onload=function(){window.print();window.close()}<\/script></body></html>`);
-  printWindow.document.close();
+  fetchStoreBranding().then((branding) => {
+    const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
+    svgClone.setAttribute("width", "800");
+    svgClone.setAttribute("height", "400");
+    const svgString = new XMLSerializer().serializeToString(svgClone);
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>${title}</title>
+      <style>@page{size:landscape;margin:1cm}body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif}h1{font-size:18px;margin-bottom:8px;color:#1e293b}.chart-container{width:100%}svg{width:100%;height:auto}@media print{body{padding:0}}</style></head><body>
+      <div style="text-align:center;margin-bottom:12px;"><div style="font-size:15px;font-weight:bold;color:#1e293b;">${branding.storeName}</div><div style="font-size:8px;color:#64748b;">${brandingContactLines(branding).join(" · ")}</div></div>
+      <h1>${title}</h1><div class="chart-container">${svgString}</div>
+      <script>window.onload=function(){window.print();window.close()}<\/script></body></html>`);
+    printWindow.document.close();
+  });
 }
 
 function ChartTile({
