@@ -11,6 +11,7 @@ const menuItems = [
   { path: "/sales", label: "Sales Terminal", roles: ["cashier", "manager1", "manager2", "admin"] },
   { path: "/orders", label: "Orders", roles: ["cashier", "manager1", "manager2", "admin"] },
   { path: "/inventory", label: "Inventory", roles: ["manager1", "admin"] },
+  { path: "/lending", label: "Lending", roles: ["manager1", "manager2", "admin"], settingKey: "lending_enabled" },
   { path: "/analytics", label: "Analytics", roles: ["manager1", "manager2", "admin"] },
   { path: "/users", label: "User Management", roles: ["manager1", "admin"] },
   { path: "/settings", label: "Settings", roles: ["cashier", "manager1", "manager2", "admin"] },
@@ -19,6 +20,7 @@ const menuItems = [
 export default function Sidebar({ role, username, onLogout }: SidebarProps) {
   const [storeName, setStoreName] = useState("");
   const [storeLogo, setStoreLogo] = useState("");
+  const [lendingEnabled, setLendingEnabled] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -26,6 +28,7 @@ export default function Sidebar({ role, username, onLogout }: SidebarProps) {
       .then((data) => {
         setStoreName(data.store_name || "");
         setStoreLogo(data.store_logo || "");
+        setLendingEnabled(data.lending_enabled === "true");
       })
       .catch(() => {});
   }, []);
@@ -66,7 +69,7 @@ export default function Sidebar({ role, username, onLogout }: SidebarProps) {
 
       <nav className="flex flex-col space-y-2 flex-1">
         {menuItems
-          .filter((item) => item.roles.includes(role))
+          .filter((item) => item.roles.includes(role) && (!item.settingKey || (item.settingKey === "lending_enabled" && lendingEnabled)))
           .map((item) => (
             <NavLink
               key={item.path}
