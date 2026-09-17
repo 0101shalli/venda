@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { StoreCredit, CreditBarcode, printCreditCard } from "./creditsShared";
 
 interface Props {
@@ -10,10 +11,10 @@ interface Props {
 type StatusFilter = "all" | StoreCredit["status"];
 
 const STATUS_LABEL: Record<StoreCredit["status"], string> = {
-  unclaimed: "Unclaimed",
-  unavailable: "Unavailable",
-  claimed: "Claimed",
-  cancelled: "Cancelled",
+  unclaimed: "viewcredits.status.unclaimed",
+  unavailable: "viewcredits.status.unavailable",
+  claimed: "viewcredits.status.claimed",
+  cancelled: "viewcredits.status.cancelled",
 };
 
 const STATUS_STYLE: Record<StoreCredit["status"], string> = {
@@ -25,6 +26,7 @@ const STATUS_STYLE: Record<StoreCredit["status"], string> = {
 
 export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [credits, setCredits] = useState<StoreCredit[]>([]);
   const [summary, setSummary] = useState({ unclaimed: 0, unavailable: 0, claimed: 0, cancelled: 0 });
   const [filter, setFilter] = useState<StatusFilter>("all");
@@ -38,7 +40,7 @@ export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
   const loadCredits = () => {
     fetch("/api/credits")
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch credits");
+        if (!res.ok) throw new Error(t("viewcredits.fetchFailed"));
         return res.json();
       })
       .then((data) => {
@@ -62,13 +64,13 @@ export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
     filter === "all" ? credits : credits.filter((c) => c.status === filter);
 
   const handleCancel = (credit: StoreCredit) => {
-    if (!window.confirm(`Cancel this store credit (${formatPrice(credit.amount)}) for ${credit.client_name}?`)) return;
+    if (!window.confirm(`${t("viewcredits.cancelConfirmTitle")} (${formatPrice(credit.amount)}) ${t("viewcredits.cancelConfirmFor")} ${credit.client_name}?`)) return;
     setCancellingId(credit.id);
     setCancelError(null);
     fetch(`/api/credits/${credit.id}/cancel`, { method: "POST" })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.detail || "Failed to cancel credit");
+        if (!res.ok) throw new Error(data.detail || t("viewcredits.cancelFailed"));
         loadCredits();
       })
       .catch((err) => {
@@ -89,7 +91,7 @@ export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-3xl rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">Store Credits</h3>
+          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t("viewcredits.title")}</h3>
           <button
             type="button"
             onClick={onClose}
@@ -103,19 +105,19 @@ export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
 
         <div className="grid grid-cols-4 gap-3 mb-4">
           <div className="rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 p-3 text-center">
-            <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Unclaimed</div>
+            <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">{t("viewcredits.status.unclaimed")}</div>
             <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{formatPrice(summary.unclaimed)}</div>
           </div>
           <div className="rounded-2xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 p-3 text-center">
-            <div className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">Unavailable</div>
+            <div className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">{t("viewcredits.status.unavailable")}</div>
             <div className="text-lg font-bold text-red-700 dark:text-red-300">{formatPrice(summary.unavailable)}</div>
           </div>
           <div className="rounded-2xl bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900 p-3 text-center">
-            <div className="text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wider">Claimed</div>
+            <div className="text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wider">{t("viewcredits.status.claimed")}</div>
             <div className="text-lg font-bold text-sky-700 dark:text-sky-300">{formatPrice(summary.claimed)}</div>
           </div>
           <div className="rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 text-center">
-            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Cancelled</div>
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t("viewcredits.status.cancelled")}</div>
             <div className="text-lg font-bold text-slate-600 dark:text-slate-300 line-through">{formatPrice(summary.cancelled)}</div>
           </div>
         </div>
@@ -127,11 +129,11 @@ export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
               onChange={(e) => setFilter(e.target.value as StatusFilter)}
               className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
             >
-              <option value="all">All statuses</option>
-              <option value="unclaimed">Unclaimed</option>
-              <option value="unavailable">Unavailable</option>
-              <option value="claimed">Claimed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="all">{t("viewcredits.allStatuses")}</option>
+              <option value="unclaimed">{t("viewcredits.status.unclaimed")}</option>
+              <option value="unavailable">{t("viewcredits.status.unavailable")}</option>
+              <option value="claimed">{t("viewcredits.status.claimed")}</option>
+              <option value="cancelled">{t("viewcredits.status.cancelled")}</option>
             </select>
           </div>
         </div>
@@ -154,11 +156,11 @@ export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
           </div>
         ) : error ? (
           <div className="rounded-2xl bg-red-50 dark:bg-red-950/20 p-6 text-red-500 dark:text-red-400 text-center border border-red-200 dark:border-red-950">
-            Error: {error}
+            {t("common.error")}: {error}
           </div>
         ) : filtered.length === 0 ? (
           <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-10 text-center text-slate-500 dark:text-slate-400">
-            No credits found.
+            {t("viewcredits.noCredits")}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3">
@@ -180,13 +182,13 @@ export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{c.credit_code}</span>
                       <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[c.status]}`}>
-                        {STATUS_LABEL[c.status]}
+                        {t(STATUS_LABEL[c.status])}
                       </span>
                     </div>
                     <div className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{c.client_name}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400">{c.product_name}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400">
-                      Expiry: {c.expiry_date?.split("T")[0] ?? "—"}
+                      {t("viewcredits.expiry")}: {c.expiry_date?.split("T")[0] ?? "—"}
                     </div>
                     <div className="mt-1 font-bold text-slate-800 dark:text-slate-100">{formatPrice(c.amount)}</div>
                   </div>
@@ -197,7 +199,7 @@ export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
                       disabled={cancellingId === c.id}
                       className="shrink-0 rounded-xl bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white px-4 py-2 text-sm font-semibold transition-colors"
                     >
-                      {cancellingId === c.id ? "Cancelling..." : "Cancel"}
+                      {cancellingId === c.id ? t("viewcredits.cancelling") : t("common.cancel")}
                     </button>
                   )}
                   <button
@@ -206,7 +208,7 @@ export default function ViewCreditsModal({ refreshKey, onClose }: Props) {
                     disabled={printingId === c.id}
                     className="shrink-0 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white px-4 py-2 text-sm font-semibold transition-colors"
                   >
-                    {printingId === c.id ? "Printing..." : "🖨️ Print"}
+                    {printingId === c.id ? t("viewcredits.printing") : `🖨️ ${t("common.print")}`}
                   </button>
                 </div>
               );

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import RefundModal, { RefundOrderItem } from "../components/RefundModal";
 import CreditProcessModal from "../components/CreditProcessModal";
 import ViewCreditsModal from "../components/ViewCreditsModal";
@@ -31,6 +32,7 @@ interface Order {
 }
 
 function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void }) {
+  const { t } = useLanguage();
   const { formatPrice } = useCurrency();
   const [printing, setPrinting] = useState(false);
 
@@ -42,8 +44,8 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
       .map(
         (it) =>
           `<tr style="border-bottom:1px solid #e2e8f0;">
-             <td style="padding:6px 8px;text-align:left;font-size:13px;">${it.name}${it.is_bulk ? " (BULK)" : ""}</td>
-             <td style="padding:6px 8px;text-align:center;font-size:13px;">${it.is_bulk && (it.bulk_units ?? 0) > 0 ? `${it.bulk_units} × bulk` : it.quantity}</td>
+             <td style="padding:6px 8px;text-align:left;font-size:13px;">${it.name}${it.is_bulk ? ` (${t("orders.bulk")})` : ""}</td>
+             <td style="padding:6px 8px;text-align:center;font-size:13px;">${it.is_bulk && (it.bulk_units ?? 0) > 0 ? `${it.bulk_units} × ${t("orders.bulk")}` : it.quantity}</td>
              <td style="padding:6px 8px;text-align:right;font-size:13px;">${formatPrice(it.is_bulk && it.bulk_quantity ? it.unit_price * it.bulk_quantity : it.unit_price)}</td>
              <td style="padding:6px 8px;text-align:right;font-size:13px;">${formatPrice(it.total_price)}</td>
            </tr>`
@@ -54,30 +56,30 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
       setPrinting(false);
       return;
     }
-    win.document.write(`<html><head><title>Order ${order.invoice_number}</title></head><body>
+    win.document.write(`<html><head><title>${t("orders.ordertitle")} ${order.invoice_number}</title></head><body>
       <div style="font-family:Arial,sans-serif;padding:24px;border:2px solid #0F172A;border-radius:12px;max-width:440px;margin:auto;">
         <div style="text-align:center;border-bottom:2px solid #0F172A;padding-bottom:12px;">
           ${printBrandingHeaderHtml(branding.storeLogo)}
           <div style="font-size:12px;color:#475569;letter-spacing:1px;">${branding.storeName}</div>
-          <h2 style="margin:6px 0 0;font-size:20px;">ORDER ITEMS</h2>
+          <h2 style="margin:6px 0 0;font-size:20px;">${t("orders.orderitems")}</h2>
         </div>
         <div style="padding:12px 0;">
-          <p style="margin:2px 0;font-size:13px;"><strong>Reference:</strong> ${order.invoice_number}</p>
-          <p style="margin:2px 0;font-size:13px;"><strong>Date:</strong> ${new Date(order.timestamp).toLocaleString()}</p>
-          <p style="margin:2px 0;font-size:13px;"><strong>Cashier:</strong> ${order.cashier_name} (ID: ${order.cashier_id})</p>
-          <p style="margin:2px 0;font-size:13px;"><strong>Payment:</strong> ${order.payment_method}</p>
+          <p style="margin:2px 0;font-size:13px;"><strong>${t("orders.reference")}:</strong> ${order.invoice_number}</p>
+          <p style="margin:2px 0;font-size:13px;"><strong>${t("orders.date")}:</strong> ${new Date(order.timestamp).toLocaleString()}</p>
+          <p style="margin:2px 0;font-size:13px;"><strong>${t("orders.cashier")}:</strong> ${order.cashier_name} (ID: ${order.cashier_id})</p>
+          <p style="margin:2px 0;font-size:13px;"><strong>${t("orders.payment")}:</strong> ${order.payment_method}</p>
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <thead><tr style="background:#f1f5f9;">
-            <th style="padding:6px 8px;text-align:left;">Item</th>
-            <th style="padding:6px 8px;text-align:center;">Qty</th>
-            <th style="padding:6px 8px;text-align:right;">Price</th>
-            <th style="padding:6px 8px;text-align:right;">Total</th>
+            <th style="padding:6px 8px;text-align:left;">${t("orders.item")}</th>
+            <th style="padding:6px 8px;text-align:center;">${t("orders.qty")}</th>
+            <th style="padding:6px 8px;text-align:right;">${t("orders.price")}</th>
+            <th style="padding:6px 8px;text-align:right;">${t("orders.total")}</th>
           </tr></thead>
           <tbody>${itemsHtml}</tbody>
         </table>
         <div style="margin-top:12px;border-top:2px solid #0F172A;padding-top:10px;">
-          <p style="margin:2px 0;font-size:15px;text-align:right;"><strong>Total:</strong> ${formatPrice(order.total_amount)}</p>
+          <p style="margin:2px 0;font-size:15px;text-align:right;"><strong>${t("orders.total")}:</strong> ${formatPrice(order.total_amount)}</p>
         </div>
         ${footerHtml}
       </div></body></html>`);
@@ -90,7 +92,7 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-2xl rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Order Items</h3>
+          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">{t("orders.orderitems")}</h3>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -98,7 +100,7 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
               disabled={printing}
               className="rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white px-4 py-2 text-sm font-semibold transition-colors"
             >
-              {printing ? "Printing..." : "🖨️ Print"}
+              {printing ? t("orders.printing") : `🖨️ ${t("orders.print")}`}
             </button>
             <button
               type="button"
@@ -114,19 +116,19 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
 
         <div className="mb-4 grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4 text-sm">
           <div>
-            <p className="text-xs text-slate-400">Reference</p>
+            <p className="text-xs text-slate-400">{t("orders.reference")}</p>
             <p className="font-mono font-semibold text-slate-800 dark:text-white">{order.invoice_number}</p>
           </div>
           <div>
-            <p className="text-xs text-slate-400">Payment</p>
+            <p className="text-xs text-slate-400">{t("orders.payment")}</p>
             <p className="font-semibold text-slate-800 dark:text-white">{order.payment_method}</p>
           </div>
           <div>
-            <p className="text-xs text-slate-400">Cashier</p>
+            <p className="text-xs text-slate-400">{t("orders.cashier")}</p>
             <p className="font-semibold text-slate-800 dark:text-white">{order.cashier_name}</p>
           </div>
           <div>
-            <p className="text-xs text-slate-400">Date</p>
+            <p className="text-xs text-slate-400">{t("orders.date")}</p>
             <p className="font-semibold text-slate-800 dark:text-white">{new Date(order.timestamp).toLocaleString()}</p>
           </div>
         </div>
@@ -135,11 +137,11 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-800 uppercase font-semibold text-xs tracking-wider">
-                <th className="pb-3">SKU / Barcode</th>
-                <th className="pb-3">Product Name</th>
-                <th className="pb-3 text-right">Unit Price</th>
-                <th className="pb-3 text-center">Quantity</th>
-                <th className="pb-3 text-right">Total Price</th>
+                <th className="pb-3">{t("orders.skubarcode")}</th>
+                <th className="pb-3">{t("orders.productname")}</th>
+                <th className="pb-3 text-right">{t("orders.unitprice")}</th>
+                <th className="pb-3 text-center">{t("orders.quantity")}</th>
+                <th className="pb-3 text-right">{t("orders.totalprice")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -150,7 +152,7 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
                     <span>{item.name}</span>
                     {item.is_bulk && (
                       <span className="ml-1.5 rounded-md bg-sky-100 dark:bg-sky-950/50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-600 dark:text-sky-400">
-                        Bulk
+                        {t("orders.bulk")}
                       </span>
                     )}
                   </td>
@@ -158,7 +160,7 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
                     {item.is_bulk && item.bulk_quantity ? formatPrice(item.unit_price * item.bulk_quantity) : formatPrice(item.unit_price)}
                   </td>
                   <td className="py-3 text-center">
-                    {item.is_bulk && (item.bulk_units ?? 0) > 0 ? `${item.bulk_units} × bulk` : item.quantity}
+                    {item.is_bulk && (item.bulk_units ?? 0) > 0 ? `${item.bulk_units} × ${t("orders.bulk")}` : item.quantity}
                   </td>
                   <td className="py-3 text-right font-semibold text-slate-800 dark:text-slate-200">{formatPrice(item.total_price)}</td>
                 </tr>
@@ -170,7 +172,7 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
         <div className="mt-4 flex justify-end text-right">
           <div>
             <div className="text-sm text-slate-500 dark:text-slate-400">
-              {order.items.reduce((acc, it) => acc + it.quantity, 0)} item(s)
+              {order.items.reduce((acc, it) => acc + it.quantity, 0)} {t("orders.itemcount")}
             </div>
             <div className="text-lg font-bold text-slate-800 dark:text-slate-100">{formatPrice(order.total_amount)}</div>
           </div>
@@ -181,6 +183,7 @@ function OrderItemsModal({ order, onClose }: { order: Order; onClose: () => void
 }
 
 export default function OrdersPage() {
+  const { t } = useLanguage();
   const { formatPrice } = useCurrency();
   const [orders, setOrders] = useState<Order[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -196,7 +199,7 @@ export default function OrdersPage() {
   const fetchOrders = () => {
     fetch("/api/sales")
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch orders");
+        if (!res.ok) throw new Error(t("orders.fetchfailed"));
         return res.json();
       })
       .then((data) => {
@@ -228,15 +231,15 @@ export default function OrdersPage() {
   return (
     <div className="space-y-6">
       <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Orders History</h2>
-        <p className="mt-2 text-slate-500 dark:text-slate-400">View and inspect customer checkout orders and item details.</p>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{t("orders.title")}</h2>
+        <p className="mt-2 text-slate-500 dark:text-slate-400">{t("orders.subtitle")}</p>
       </div>
 
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
         <div className="relative w-full md:w-96">
           <input
             type="text"
-            placeholder="Search by invoice number or cashier..."
+            placeholder={t("orders.searchplaceholder")}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
@@ -248,7 +251,7 @@ export default function OrdersPage() {
             onClick={() => setCreditProcessOpen(true)}
             className="rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-semibold px-4 py-3 transition-colors"
           >
-            💳 Credit Process
+            💳 {t("orders.creditprocess")}
           </button>
           <button
             type="button"
@@ -258,10 +261,10 @@ export default function OrdersPage() {
             }}
             className="rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
           >
-            👁️ View Credit
+            👁️ {t("orders.viewcredit")}
           </button>
           <div className="text-sm text-slate-500 dark:text-slate-400 font-medium">
-            Showing {filteredOrders.length} order{filteredOrders.length !== 1 && "s"}
+            {t("orders.showing")} {filteredOrders.length} {filteredOrders.length !== 1 ? t("orders.orders") : t("orders.order")}
           </div>
         </div>
       </div>
@@ -272,11 +275,11 @@ export default function OrdersPage() {
         </div>
       ) : error ? (
         <div className="rounded-2xl bg-red-50 dark:bg-red-950/20 p-6 text-red-500 dark:text-red-400 text-center border border-red-200 dark:border-red-950">
-          Error: {error}
+          {t("orders.error")}: {error}
         </div>
       ) : filteredOrders.length === 0 ? (
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-12 text-center border border-slate-200 dark:border-slate-800">
-          <p className="text-slate-500 dark:text-slate-400 text-lg font-medium">No orders found matching the filter.</p>
+          <p className="text-slate-500 dark:text-slate-400 text-lg font-medium">{t("orders.noorders")}</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -304,7 +307,7 @@ export default function OrdersPage() {
                     </div>
                     <div className="text-sm text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-4">
                       <span>🕒 {dateStr}</span>
-                      <span>👤 Cashier: {order.cashier_name} (ID: {order.cashier_id})</span>
+                      <span>👤 {t("orders.cashier")}: {order.cashier_name} (ID: {order.cashier_id})</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-6">
@@ -313,7 +316,7 @@ export default function OrdersPage() {
                         {formatPrice(order.total_amount)}
                       </div>
                       <div className="text-xs text-slate-400 dark:text-slate-500">
-                        {order.items.reduce((acc, it) => acc + it.quantity, 0)} item(s)
+                        {order.items.reduce((acc, it) => acc + it.quantity, 0)} {t("orders.itemcount")}
                       </div>
                     </div>
                     <button
@@ -324,7 +327,7 @@ export default function OrdersPage() {
                       }}
                       className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3 py-2 transition-colors"
                     >
-                      View & Print
+                      {t("orders.viewprint")}
                     </button>
                     <button
                       type="button"
@@ -350,14 +353,14 @@ export default function OrdersPage() {
                       <table className="w-full text-left border-collapse text-sm">
                         <thead>
                           <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-800 uppercase font-semibold text-xs tracking-wider">
-                            <th className="pb-3">SKU / Barcode</th>
-                            <th className="pb-3">Product Name</th>
-                            <th className="pb-3">Description</th>
-                            <th className="pb-3">Category</th>
-                            <th className="pb-3 text-right">Unit Price</th>
-                            <th className="pb-3 text-center">Quantity</th>
-                            <th className="pb-3 text-right">Total Price</th>
-                            <th className="pb-3 text-center">Refund</th>
+                            <th className="pb-3">{t("orders.skubarcode")}</th>
+                            <th className="pb-3">{t("orders.productname")}</th>
+                            <th className="pb-3">{t("orders.description")}</th>
+                            <th className="pb-3">{t("orders.category")}</th>
+                            <th className="pb-3 text-right">{t("orders.unitprice")}</th>
+                            <th className="pb-3 text-center">{t("orders.quantity")}</th>
+                            <th className="pb-3 text-right">{t("orders.totalprice")}</th>
+                            <th className="pb-3 text-center">{t("orders.refund")}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
@@ -369,7 +372,7 @@ export default function OrdersPage() {
                                   <span>{item.name}</span>
                                   {item.is_bulk && (
                                     <span className="shrink-0 rounded-md bg-sky-100 dark:bg-sky-950/50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-600 dark:text-sky-400">
-                                      Bulk
+                                      {t("orders.bulk")}
                                     </span>
                                   )}
                                 </div>
@@ -383,7 +386,7 @@ export default function OrdersPage() {
                               </td>
                               <td className="py-4 text-center">
                                 {item.is_bulk && (item.bulk_units ?? 0) > 0
-                                  ? `${item.bulk_units} × bulk`
+                                  ? `${item.bulk_units} × ${t("orders.bulk")}`
                                   : item.quantity}
                               </td>
                               <td className="py-4 text-right font-semibold text-slate-800 dark:text-slate-200">
@@ -396,7 +399,7 @@ export default function OrdersPage() {
                                   item.sale_item_id != null && (
                                     item.is_refunded ? (
                                       <span className="rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-semibold px-3 py-1.5 cursor-not-allowed">
-                                        Refunded
+                                        {t("orders.refunded")}
                                       </span>
                                     ) : (
                                       <button
@@ -404,7 +407,7 @@ export default function OrdersPage() {
                                         onClick={() => setRefundItem({ orderId: order.id, item })}
                                         className="rounded-full bg-red-50 dark:bg-red-950/40 text-red-500 dark:text-red-400 text-xs font-semibold px-3 py-1.5 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
                                       >
-                                        Refund
+                                        {t("orders.refund")}
                                       </button>
                                     )
                                   )}

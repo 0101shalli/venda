@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Product } from "./ProductModal";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 
 type SalesData = {
   product_id: number;
@@ -25,6 +26,7 @@ type MetaModalProps = {
 
 export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [currentSlide, setCurrentSlide] = useState<"data" | "sales">("data");
   const [salesData, setSalesData] = useState<SalesData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,11 +44,11 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
     setError(null);
     try {
       const response = await fetch(`/api/inventory/${product.id}/sales`);
-      if (!response.ok) throw new Error("Failed to fetch sales data");
+      if (!response.ok) throw new Error(t("meta.fetchFailed"));
       const data = await response.json();
       setSalesData(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error loading sales data");
+      setError(err instanceof Error ? err.message : t("meta.loadError"));
     } finally {
       setIsLoading(false);
     }
@@ -61,7 +63,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
       <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-6 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">Product Analytics</h2>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white">{t("meta.title")}</h2>
           <button
             onClick={onClose}
             type="button"
@@ -83,7 +85,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                 : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
             }`}
           >
-            Product Data
+            {t("meta.productData")}
           </button>
           <button
             onClick={() => setCurrentSlide("sales")}
@@ -93,7 +95,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                 : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
             }`}
           >
-            Sales Analytics
+            {t("meta.salesAnalytics")}
           </button>
         </div>
 
@@ -102,76 +104,76 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">Name</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">{t("common.name")}</p>
                 <p className="text-lg font-bold text-slate-900 dark:text-white">{product.name}</p>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">Category</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">{t("meta.category")}</p>
                 <p className="text-lg font-bold text-slate-900 dark:text-white">{product.category}</p>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">Barcode</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">{t("meta.barcode")}</p>
                 <p className="text-lg font-mono font-bold text-slate-900 dark:text-white">{product.barcode}</p>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">SKU</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">{t("meta.sku")}</p>
                 <p className="text-lg font-bold text-slate-900 dark:text-white">{product.id}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 border border-emerald-200 dark:border-emerald-900">
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 uppercase font-semibold mb-1">Selling Price</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 uppercase font-semibold mb-1">{t("meta.sellingPrice")}</p>
                 <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{formatPrice(product.selling_price)}</p>
               </div>
               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-900">
-                <p className="text-xs text-blue-600 dark:text-blue-400 uppercase font-semibold mb-1">Cost Price</p>
+                <p className="text-xs text-blue-600 dark:text-blue-400 uppercase font-semibold mb-1">{t("meta.costPrice")}</p>
                 <p className="text-2xl font-bold text-blue-700 dark:text-blue-400">{formatPrice(product.cost_price)}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">Current Stock</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">{t("meta.currentStock")}</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">{product.current_stock}</p>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">Min Level</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">{t("meta.minLevel")}</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">{product.min_stock_level}</p>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">Reorder Point</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">{t("meta.reorderPoint")}</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">{product.reorder_point}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">Supplier</p>
-                <p className="text-sm font-bold text-slate-900 dark:text-white">{product.supplier || "Not specified"}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">{t("meta.supplier")}</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">{product.supplier || t("meta.notSpecified")}</p>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">Warehouse Location</p>
-                <p className="text-sm font-bold text-slate-900 dark:text-white">{product.warehouse_location || "Not specified"}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-1">{t("meta.warehouseLocation")}</p>
+                <p className="text-sm font-bold text-slate-900 dark:text-white">{product.warehouse_location || t("meta.notSpecified")}</p>
               </div>
             </div>
 
             {product.description && (
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-2">Description</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold mb-2">{t("common.description")}</p>
                 <p className="text-sm text-slate-700 dark:text-slate-300">{product.description}</p>
               </div>
             )}
 
             {/* Profit Margin */}
             <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg p-4 border border-indigo-200 dark:border-indigo-900">
-              <p className="text-xs text-indigo-600 dark:text-indigo-400 uppercase font-semibold mb-2">Profit Margin</p>
+              <p className="text-xs text-indigo-600 dark:text-indigo-400 uppercase font-semibold mb-2">{t("meta.profitMargin")}</p>
               <div className="flex items-baseline gap-2">
                 <p className="text-3xl font-bold text-indigo-700 dark:text-indigo-400">
                   {(((product.selling_price - product.cost_price) / product.selling_price) * 100).toFixed(1)}%
                 </p>
                 <p className="text-sm text-indigo-600 dark:text-indigo-400">
-                  ({formatPrice(product.selling_price - product.cost_price)} per unit)
+                  ({formatPrice(product.selling_price - product.cost_price)} {t("meta.perUnit")})
                 </p>
               </div>
             </div>
@@ -183,7 +185,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
           <div className="space-y-6">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
-                <div className="text-slate-400 dark:text-slate-500">Loading sales data...</div>
+                <div className="text-slate-400 dark:text-slate-500">{t("meta.loadingSales")}</div>
               </div>
             ) : error ? (
               <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 text-red-600 dark:text-red-400">
@@ -194,22 +196,22 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                 {/* Summary Cards */}
                 <div className="grid grid-cols-3 gap-4">
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 border border-emerald-200 dark:border-emerald-900">
-                    <p className="text-xs text-emerald-600 dark:text-emerald-400 uppercase font-semibold mb-1">Total Sold</p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 uppercase font-semibold mb-1">{t("meta.totalSold")}</p>
                     <p className="text-3xl font-bold text-emerald-700 dark:text-emerald-400">{salesData.total_sold}</p>
                   </div>
                   <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-900">
-                    <p className="text-xs text-blue-600 dark:text-blue-400 uppercase font-semibold mb-1">Revenue</p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 uppercase font-semibold mb-1">{t("meta.revenue")}</p>
                     <p className="text-3xl font-bold text-blue-700 dark:text-blue-400">{formatPrice(salesData.total_revenue)}</p>
                   </div>
                   <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-900">
-                    <p className="text-xs text-purple-600 dark:text-purple-400 uppercase font-semibold mb-1">Avg Daily</p>
+                    <p className="text-xs text-purple-600 dark:text-purple-400 uppercase font-semibold mb-1">{t("meta.avgDaily")}</p>
                     <p className="text-3xl font-bold text-purple-700 dark:text-purple-400">{salesData.avg_daily_sales.toFixed(1)}</p>
                   </div>
                 </div>
 
                 {/* Sales Chart */}
                 <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white mb-4">Sales Over Time (Last 90 Days)</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mb-4">{t("meta.salesOverTime")}</p>
                   
                   {salesData.sales_by_date && salesData.sales_by_date.length > 0 ? (
                     <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -243,7 +245,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                       })}
                     </div>
                   ) : (
-                    <p className="text-center py-6 text-slate-500 dark:text-slate-400">No sales data available</p>
+                    <p className="text-center py-6 text-slate-500 dark:text-slate-400">{t("meta.noSalesData")}</p>
                   )}
                 </div>
 
@@ -253,9 +255,9 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                     <table className="w-full text-sm">
                       <thead className="bg-slate-100 dark:bg-slate-700">
                         <tr>
-                          <th className="px-4 py-2 text-left text-slate-700 dark:text-slate-300 font-semibold">Date</th>
-                          <th className="px-4 py-2 text-left text-slate-700 dark:text-slate-300 font-semibold">Qty</th>
-                          <th className="px-4 py-2 text-left text-slate-700 dark:text-slate-300 font-semibold">Revenue</th>
+                          <th className="px-4 py-2 text-left text-slate-700 dark:text-slate-300 font-semibold">{t("common.date")}</th>
+                          <th className="px-4 py-2 text-left text-slate-700 dark:text-slate-300 font-semibold">{t("meta.qty")}</th>
+                          <th className="px-4 py-2 text-left text-slate-700 dark:text-slate-300 font-semibold">{t("meta.revenue")}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -276,7 +278,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
                 )}
               </>
             ) : (
-              <div className="text-center py-8 text-slate-500 dark:text-slate-400">No sales data available</div>
+              <div className="text-center py-8 text-slate-500 dark:text-slate-400">{t("meta.noSalesData")}</div>
             )}
           </div>
         )}
@@ -287,7 +289,7 @@ export default function MetaModal({ isOpen, product, onClose }: MetaModalProps) 
             onClick={onClose}
             className="w-full py-2 px-4 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold transition-colors"
           >
-            Close
+            {t("common.close")}
           </button>
         </div>
       </div>

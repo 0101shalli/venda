@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import JsBarcode from "jsbarcode";
 import { Product } from "./ProductModal";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { barcodeFormat } from "../utils/barcode";
 import { fetchStoreBranding, printBrandingHeaderHtml, printBrandingFooterHtml } from "./creditsShared";
 
@@ -13,6 +14,7 @@ type BarcodeModalProps = {
 
 export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalProps) {
   const { formatPrice, currencySymbol } = useCurrency();
+  const { t } = useLanguage();
   const barcodeRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Print Barcode - ${product.name}</title>
+        <title>${t("barcode.title")} - ${product.name}</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 20px; display: flex; justify-content: center; }
           .barcode-container { 
@@ -144,7 +146,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
       <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white">Print Barcode</h2>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white">{t("barcode.title")}</h2>
           <button
             onClick={onClose}
             type="button"
@@ -184,7 +186,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4" />
             </svg>
-            Print
+            {t("common.print")}
           </button>
           <button
             onClick={handleDownload}
@@ -193,7 +195,7 @@ export default function BarcodeModal({ isOpen, product, onClose }: BarcodeModalP
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            Download Label
+            {t("barcode.downloadLabel")}
           </button>
         </div>
       </div>

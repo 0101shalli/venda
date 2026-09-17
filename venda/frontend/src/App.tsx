@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Route, Routes, Navigate, useNavigate } from "react-router-dom";
 import { useTheme } from "./context/ThemeContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
+import { LanguageProvider } from "./context/LanguageContext";
 import Sidebar from "./components/Sidebar";
 import LoginPage from "./pages/LoginPage";
 import SalesTerminal from "./pages/SalesTerminal";
@@ -62,10 +63,15 @@ function App() {
   };
 
   if (!auth) {
-    return <LoginPage onSuccess={handleLogin} />;
+    return (
+      <LanguageProvider>
+        <LoginPage onSuccess={handleLogin} />
+      </LanguageProvider>
+    );
   }
 
   return (
+    <LanguageProvider>
     <CurrencyProvider>
     <div className={`min-h-screen flex ${theme === "dark" ? "dark" : ""}`}>
       <style>{`
@@ -100,6 +106,7 @@ function App() {
       </main>
     </div>
     </CurrencyProvider>
+    </LanguageProvider>
   );
 }
 

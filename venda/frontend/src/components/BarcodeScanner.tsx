@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import CameraScanner from "./CameraScanner";
 import ScanToast from "./ScanToast";
 
@@ -26,6 +27,7 @@ type BarcodeScannerProps = {
 
 export default function BarcodeScanner({ onProductScanned, inputRef: externalInputRef }: BarcodeScannerProps) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const internalRef = useRef<HTMLInputElement>(null);
   const inputRef = externalInputRef ?? internalRef;
 
@@ -46,25 +48,25 @@ export default function BarcodeScanner({ onProductScanned, inputRef: externalInp
         const res = await fetch(`/api/products/lookup?barcode=${encodeURIComponent(trimmed)}`);
         if (!res.ok) {
           setScannedProduct(null);
-          setToast({ type: "error", message: `No product found for barcode: ${trimmed}` });
+          setToast({ type: "error", message: `${t("scanner.noProductForBarcode")}: ${trimmed}` });
           return;
         }
         const product: ProductInfo = await res.json();
         setScannedProduct(product);
         onProductScanned(product);
         setAddedFlash(true);
-        setToast({ type: "success", message: `${product.name} added to cart` });
+        setToast({ type: "success", message: `${product.name} ${t("scanner.addedToCart")}` });
         setTimeout(() => setAddedFlash(false), 2000);
       } catch {
         setScannedProduct(null);
-        setToast({ type: "error", message: "Network error. Could not look up barcode." });
+        setToast({ type: "error", message: t("scanner.networkError") });
       } finally {
         setIsLookingUp(false);
         setBarcode("");
         if (inputRef.current) inputRef.current.value = "";
       }
     },
-    [onProductScanned]
+    [onProductScanned, t]
   );
 
   useEffect(() => {
@@ -108,7 +110,7 @@ export default function BarcodeScanner({ onProductScanned, inputRef: externalInp
             }`}
           />
           <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
-            {isLookingUp ? "Looking up product..." : addedFlash ? "Added to cart!" : "Scanner ready"}
+            {isLookingUp ? t("scanner.lookingUp") : addedFlash ? t("scanner.addedToCartFlash") : t("scanner.ready")}
           </span>
         </div>
         <button
@@ -119,7 +121,7 @@ export default function BarcodeScanner({ onProductScanned, inputRef: externalInp
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.882V15.118a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
           </svg>
-          Use Camera
+          {t("scanner.useCamera")}
         </button>
       </div>
 
@@ -129,7 +131,7 @@ export default function BarcodeScanner({ onProductScanned, inputRef: externalInp
         onScan={handleCameraScan}
         onClose={() => setCameraOpen(false)}
         onError={(msg) => setToast({ type: "error", message: msg })}
-        title="Scan Product Barcode"
+        title={t("scanner.scanProductBarcode")}
         multiScan={true}
       />
 
@@ -142,7 +144,7 @@ export default function BarcodeScanner({ onProductScanned, inputRef: externalInp
           value={barcode}
           onChange={(e) => setBarcode(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Scan barcode or type it here..."
+          placeholder={t("scanner.barcodePlaceholder")}
           className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 placeholder-slate-500 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder-slate-400 dark:focus:border-sky-400 dark:focus:ring-sky-900"
           autoComplete="off"
         />
@@ -151,7 +153,7 @@ export default function BarcodeScanner({ onProductScanned, inputRef: externalInp
           id="barcode-add-btn"
           className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:bg-indigo-700 active:scale-95 dark:bg-sky-500 dark:hover:bg-sky-600"
         >
-          Add
+          {t("scanner.add")}
         </button>
       </form>
 
@@ -167,19 +169,19 @@ export default function BarcodeScanner({ onProductScanned, inputRef: externalInp
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Last Scan</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">{t("scanner.lastScan")}</p>
                 {addedFlash && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white dark:bg-emerald-600">
-                    Added to cart
+                    {t("scanner.addedToCart")}
                   </span>
                 )}
               </div>
               <p className="mt-0.5 truncate font-semibold text-slate-800 dark:text-white">{scannedProduct.name}</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Barcode: {scannedProduct.barcode}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">{t("scanner.barcode")}: {scannedProduct.barcode}</p>
             </div>
             <div className="flex-shrink-0 text-right">
               <p className="text-lg font-bold text-indigo-700 dark:text-sky-400">{formatPrice(scannedProduct.selling_price)}</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Cost {formatPrice(scannedProduct.cost_price)}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">{t("scanner.cost")} {formatPrice(scannedProduct.cost_price)}</p>
             </div>
           </div>
         </div>
@@ -187,7 +189,7 @@ export default function BarcodeScanner({ onProductScanned, inputRef: externalInp
 
       {!scannedProduct && (
         <p className="text-center text-xs text-slate-400 dark:text-slate-500">
-          USB / Bluetooth / mobile scanners work automatically — just scan any barcode
+          {t("scanner.autoHint")}
         </p>
       )}
 

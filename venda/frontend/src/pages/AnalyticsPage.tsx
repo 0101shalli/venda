@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { fetchStoreBranding, brandingContactLines } from "../components/creditsShared";
 
 interface RevenueTrend {
@@ -83,6 +84,7 @@ function ChartTile({
   exportRows: (string | number)[][];
   exportFilename: string;
 }) {
+  const { t } = useLanguage();
   return (
     <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
       <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">{title}</h3>
@@ -95,14 +97,14 @@ function ChartTile({
           className="flex items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-          Export Excel
+          {t("analytics.exportexcel")}
         </button>
         <button
           onClick={() => printChartAsPdf(title, chartRef.current?.querySelector("svg") || null)}
           className="flex items-center gap-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-          Print PDF
+          {t("analytics.printpdf")}
         </button>
       </div>
     </div>
@@ -110,6 +112,7 @@ function ChartTile({
 }
 
 export default function AnalyticsPage() {
+  const { t } = useLanguage();
   const { formatPrice, currencySymbol } = useCurrency();
   const [data, setData] = useState<DetailedAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -134,7 +137,7 @@ export default function AnalyticsPage() {
   useEffect(() => {
     fetch("/api/analytics/detailed")
       .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch detailed analytics");
+        if (!res.ok) throw new Error(t("analytics.fetcherror"));
         return res.json();
       })
       .then((payload) => {
@@ -144,7 +147,7 @@ export default function AnalyticsPage() {
             revenue: Number(item.revenue || 0),
           })),
           items_sold: (payload.top_products || []).map((item: any) => ({
-            name: item.name || "Unknown Product",
+            name: item.name || t("analytics.unknownproduct"),
             quantity: Number(item.quantity || 0),
           })),
           peak_hours: (payload.daily_peak_hours || []).map((item: any) => ({
@@ -194,7 +197,7 @@ export default function AnalyticsPage() {
   if (error || !data) {
     return (
       <div className="rounded-3xl bg-rose-50 dark:bg-rose-950/20 p-8 text-center border border-rose-100 dark:border-rose-950">
-        <p className="text-rose-600 dark:text-rose-400 font-medium">Error: {error || "No data available"}</p>
+        <p className="text-rose-600 dark:text-rose-400 font-medium">Error: {error || t("analytics.nodata")}</p>
       </div>
     );
   }
@@ -218,87 +221,87 @@ export default function AnalyticsPage() {
       )}
 
       <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Interactive Analytics</h2>
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{t("analytics.title")}</h2>
         <p className="mt-2 text-slate-500 dark:text-slate-400">
-          Analyze sales performance, hourly peak traffic, inventory trends, and product performance.
+          {t("analytics.subtitle")}
         </p>
       </div>
 
       <div className="rounded-3xl bg-gradient-to-br from-indigo-600 to-violet-600 dark:from-sky-500 dark:to-sky-600 p-6 text-white shadow-sm border border-indigo-500/20 dark:border-sky-500/20 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-200 dark:text-sky-200">Today's Sales</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-200 dark:text-sky-200">{t("analytics.todayssales")}</p>
           <p className="mt-2 text-4xl font-black">{formatPrice(data.today_revenue)}</p>
-          <p className="mt-1 text-sm text-indigo-200 dark:text-sky-200">Revenue collected today</p>
+          <p className="mt-1 text-sm text-indigo-200 dark:text-sky-200">{t("analytics.revenuecollectedtoday")}</p>
         </div>
         <div className="text-5xl">📈</div>
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">30-Day Revenue</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{t("analytics.30dayrevenue")}</p>
           <p className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-100">{formatPrice(totalRevenue)}</p>
         </div>
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Items Sold</p>
-          <p className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-100">{totalItemsSold} pcs</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{t("analytics.totalitemssold")}</p>
+          <p className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-100">{totalItemsSold} {t("analytics.pcs")}</p>
         </div>
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Peak hour</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{t("analytics.peakhour")}</p>
           <p className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-100">
-            {topHour.hour}:00 <span className="text-sm font-medium text-slate-400">({topHour.orders} orders)</span>
+            {topHour.hour}:00 <span className="text-sm font-medium text-slate-400">({topHour.orders} {t("analytics.orders")})</span>
           </p>
         </div>
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Inventory Valuation</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{t("analytics.inventoryvaluation")}</p>
           <p className="mt-2 text-3xl font-black text-slate-800 dark:text-slate-100">{formatPrice(currentValuation)}</p>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ChartTile
-          title="Revenue Trends (Last 30 Days)"
+          title={t("analytics.revenuetrends30")}
           chartRef={chartRefs.revenue}
-          exportHeaders={["Date", "Revenue"]}
-          exportRows={data.revenue_trends.map((t) => [t.date, t.revenue])}
+          exportHeaders={[t("analytics.date"), t("analytics.revenue")]}
+          exportRows={data.revenue_trends.map((item) => [item.date, item.revenue])}
           exportFilename="revenue-trends"
         >
           <RevenueTrendsChart trends={data.revenue_trends} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
         </ChartTile>
 
         <ChartTile
-          title="Daily Sales (Last 7 Days)"
+          title={t("analytics.dailysales7")}
           chartRef={chartRefs.daily}
-          exportHeaders={["Date", "Revenue"]}
-          exportRows={last7Days.map((t) => [t.date, t.revenue])}
+          exportHeaders={[t("analytics.date"), t("analytics.revenue")]}
+          exportRows={last7Days.map((item) => [item.date, item.revenue])}
           exportFilename="daily-sales"
         >
           <DailySalesChart days={last7Days} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
         </ChartTile>
 
         <ChartTile
-          title="Top-Selling Products"
+          title={t("analytics.topsellingproducts")}
           chartRef={chartRefs.products}
-          exportHeaders={["Product", "Quantity Sold"]}
+          exportHeaders={[t("analytics.product"), t("analytics.quantitysold")]}
           exportRows={data.items_sold.map((p) => [p.name, p.quantity])}
           exportFilename="top-products"
         >
-          <TopProductsChart products={data.items_sold} onHover={showTooltip} onLeave={hideTooltip} />
+          <TopProductsChart products={data.items_sold} onHover={showTooltip} onLeave={hideTooltip} t={t} />
         </ChartTile>
 
         <ChartTile
-          title="Daily Peak Sales Hours"
+          title={t("analytics.dailypeaksaleshours")}
           chartRef={chartRefs.hours}
-          exportHeaders={["Hour", "Orders"]}
+          exportHeaders={[t("analytics.hour"), t("analytics.orders")]}
           exportRows={data.peak_hours.map((h) => [`${h.hour}:00`, h.orders])}
           exportFilename="peak-hours"
         >
-          <PeakHoursChart hours={data.peak_hours} onHover={showTooltip} onLeave={hideTooltip} />
+          <PeakHoursChart hours={data.peak_hours} onHover={showTooltip} onLeave={hideTooltip} t={t} />
         </ChartTile>
 
         <ChartTile
-          title="Monthly Seasonal Sales"
+          title={t("analytics.monthlyseasonalsales")}
           chartRef={chartRefs.seasonal}
-          exportHeaders={["Month", "Revenue"]}
+          exportHeaders={[t("analytics.month"), t("analytics.revenue")]}
           exportRows={data.seasonal_sales.map((s) => [s.month, s.revenue])}
           exportFilename="seasonal-sales"
         >
@@ -306,24 +309,24 @@ export default function AnalyticsPage() {
         </ChartTile>
 
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800 lg:col-span-2">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">7-Day Inventory Valuation Trend</h3>
+          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">{t("analytics.7dayinventorytrend")}</h3>
           <div className="w-full aspect-[3.5/1]" ref={chartRefs.inventory}>
-            <InventoryValuationChart history={data.inventory_history} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} />
+            <InventoryValuationChart history={data.inventory_history} onHover={showTooltip} onLeave={hideTooltip} currencySymbol={currencySymbol} t={t} />
           </div>
           <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
             <button
-              onClick={() => exportToExcel(["Date", "Value"], data.inventory_history.map((h) => [h.date, h.value]), "inventory-valuation")}
+              onClick={() => exportToExcel([t("analytics.date"), t("analytics.value")], data.inventory_history.map((h) => [h.date, h.value]), "inventory-valuation")}
               className="flex items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-              Export Excel
+              {t("analytics.exportexcel")}
             </button>
             <button
-              onClick={() => printChartAsPdf("7-Day Inventory Valuation Trend", chartRefs.inventory.current?.querySelector("svg") || null)}
+              onClick={() => printChartAsPdf(t("analytics.7dayinventorytrend"), chartRefs.inventory.current?.querySelector("svg") || null)}
               className="flex items-center gap-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 px-3 py-1.5 text-xs font-semibold text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-              Print PDF
+              {t("analytics.printpdf")}
             </button>
           </div>
         </div>
@@ -519,10 +522,12 @@ function TopProductsChart({
   products,
   onHover,
   onLeave,
+  t,
 }: {
   products: ItemSold[];
   onHover: (e: React.MouseEvent, title: string, value: string) => void;
   onLeave: () => void;
+  t: (key: string) => string;
 }) {
   const w = 600;
   const h = 250;
@@ -567,7 +572,7 @@ function TopProductsChart({
               rx="4"
               fill="url(#barGrad)"
               className="cursor-pointer hover:opacity-80"
-              onMouseEnter={(e) => onHover(e, p.name, `${p.quantity} items sold`)}
+              onMouseEnter={(e) => onHover(e, p.name, `${p.quantity} ${t("analytics.itemssold")}`)}
               onMouseLeave={onLeave}
             />
             <text
@@ -588,10 +593,12 @@ function PeakHoursChart({
   hours,
   onHover,
   onLeave,
+  t,
 }: {
   hours: PeakHour[];
   onHover: (e: React.MouseEvent, title: string, value: string) => void;
   onLeave: () => void;
+  t: (key: string) => string;
 }) {
   const w = 600;
   const h = 250;
@@ -645,7 +652,7 @@ function PeakHoursChart({
               rx="3"
               fill="url(#colGrad)"
               className="cursor-pointer hover:opacity-80"
-              onMouseEnter={(e) => onHover(e, `${item.hour}:00 - Hour`, `${item.orders} orders placed`)}
+              onMouseEnter={(e) => onHover(e, `${item.hour}:00 - ${t("analytics.hour")}`, `${item.orders} ${t("analytics.ordersplaced")}`)}
               onMouseLeave={onLeave}
             />
             {showLabel && (
@@ -766,11 +773,13 @@ function InventoryValuationChart({
   onHover,
   onLeave,
   currencySymbol,
+  t,
 }: {
   history: InventoryHistory[];
   onHover: (e: React.MouseEvent, title: string, value: string) => void;
   onLeave: () => void;
   currencySymbol: string;
+  t: (key: string) => string;
 }) {
   const w = 900;
   const h = 220;
@@ -837,7 +846,7 @@ function InventoryValuationChart({
           r="5"
           className="fill-emerald-500 stroke-white dark:stroke-slate-900 cursor-pointer hover:fill-emerald-400"
           strokeWidth="1.5"
-          onMouseEnter={(e) => onHover(e, new Date(p.data.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), `Valuation: ${currencySymbol}${p.data.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`)}
+          onMouseEnter={(e) => onHover(e, new Date(p.data.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), `${t("analytics.valuation")}: ${currencySymbol}${p.data.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`)}
           onMouseLeave={onLeave}
         />
       ))}

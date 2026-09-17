@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import BarcodeScanner, { ProductInfo } from "../components/BarcodeScanner";
 import ScanToast from "../components/ScanToast";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { getAuth } from "../services/auth";
 import { useKeyboardScanner } from "../hooks/useKeyboardScanner";
 
@@ -72,6 +73,7 @@ function bulkUnits(item: CartItem): number {
 
 function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProductInfo[]>([]);
   const [open, setOpen] = useState(false);
@@ -130,7 +132,7 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => results.length > 0 && setOpen(true)}
-          placeholder="Search products by name or barcode…"
+          placeholder={t("sales.searchplaceholder")}
           className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2.5 pl-10 pr-4 text-sm text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 outline-none ring-inset focus:border-indigo-400 dark:focus:border-sky-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-sky-900"
           autoComplete="off"
         />
@@ -160,7 +162,7 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
 
       {open && results.length === 0 && !loading && query.trim() && (
         <div className="absolute z-50 mt-1 w-full rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm text-slate-400 dark:text-slate-500 shadow-xl">
-          No products found for "<span className="font-medium text-slate-600 dark:text-slate-400">{query}</span>"
+          {t("sales.noproductsfor")} "<span className="font-medium text-slate-600 dark:text-slate-400">{query}</span>"
         </div>
       )}
     </div>
@@ -179,6 +181,7 @@ function BargainModal({
   onApply: (itemId: number, unitPrice: number, bargainType: "auto" | "manual") => void;
 }) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [autoPrice, setAutoPrice] = useState(item.selling_price);
   const [manualPrice, setManualPrice] = useState(item.selling_price);
@@ -215,13 +218,13 @@ function BargainModal({
   const handleApply = () => {
     if (mode === "auto") {
       if (effectiveAutoFloor >= item.selling_price) {
-        setError("This product cannot be auto-bargained below its selling price.");
+        setError(t("sales.cantauto"));
         return;
       }
       onApply(item.id, autoPrice, "auto");
     } else {
       if (manualPrice < effectiveManualFloor || manualPrice > item.selling_price) {
-        setError(`Price must be between ${formatPrice(effectiveManualFloor)} and ${formatPrice(item.selling_price)}.`);
+        setError(`${t("sales.pricebetween")} ${formatPrice(effectiveManualFloor)} ${t("sales.and")} ${formatPrice(item.selling_price)}.`);
         return;
       }
       onApply(item.id, manualPrice, "manual");
@@ -232,22 +235,22 @@ function BargainModal({
     <div className="fixed inset-0 z-[90] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-6">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Bargain</h2>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{t("sales.bargain")}</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          {item.name} · Barcode {item.barcode}
+          {item.name} · {t("sales.barcode")} {item.barcode}
         </p>
 
         <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 grid grid-cols-3 gap-3 text-center">
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Selling Price</p>
+            <p className="text-xs uppercase tracking-wide text-slate-400">{t("sales.sellingprice")}</p>
             <p className="mt-1 font-bold text-slate-800 dark:text-white">{formatPrice(item.selling_price)}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Cost Price</p>
+            <p className="text-xs uppercase tracking-wide text-slate-400">{t("sales.costprice")}</p>
             <p className="mt-1 font-bold text-slate-800 dark:text-white">{formatPrice(item.cost_price)}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Min Selling</p>
+            <p className="text-xs uppercase tracking-wide text-slate-400">{t("sales.minselling")}</p>
             <p className="mt-1 font-bold text-slate-800 dark:text-white">
               {minSelling != null ? formatPrice(minSelling) : "—"}
             </p>
@@ -265,7 +268,7 @@ function BargainModal({
                 : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
             }`}
           >
-            Automatic (All users)
+            {t("sales.automatic")}
           </button>
           {isManager && (
             <button
@@ -277,7 +280,7 @@ function BargainModal({
                   : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
               }`}
             >
-              Manual (Managers)
+              {t("sales.manual")}
             </button>
           )}
         </div>
@@ -285,11 +288,11 @@ function BargainModal({
         {mode === "auto" ? (
           <div className="mt-5">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Bargained Price</p>
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{t("sales.bargainedprice")}</p>
               <p className="text-xl font-black text-indigo-700 dark:text-sky-400">{formatPrice(autoPrice)}</p>
             </div>
             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              Floor {formatPrice(effectiveAutoFloor)} (cost + 15%) · Reduced by {formatPrice(autoReduction)}
+              {t("sales.floor")} {formatPrice(effectiveAutoFloor)} ({t("sales.costplus15")}) · {t("sales.reducedby")} {formatPrice(autoReduction)}
             </p>
             <input
               type="range"
@@ -303,14 +306,14 @@ function BargainModal({
             />
             {effectiveAutoFloor >= item.selling_price && (
               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                Auto bargaining is not possible for this product — the floor is above the selling price.
+                {t("sales.autoimpossible")}
               </p>
             )}
           </div>
         ) : (
           <div className="mt-5">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-              Selling Price for this Customer
+              {t("sales.sellingforcustomer")}
             </label>
             <input
               type="number"
@@ -322,12 +325,12 @@ function BargainModal({
               className="mt-1 block w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900 outline-none"
             />
             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              Cannot go below {formatPrice(effectiveManualFloor)} (cost price) or above {formatPrice(item.selling_price)}.
+              {t("sales.cannotbelow")} {formatPrice(effectiveManualFloor)} ({t("sales.costprice")}) {t("sales.orabove")} {formatPrice(item.selling_price)}.
             </p>
 
             {steps.length > 0 && (
               <div className="mt-4">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Bargain Steps</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{t("sales.bargainsteps")}</label>
                 <div className="flex flex-wrap gap-2">
                   {steps.map((step) => {
                     const selected = selectedSteps.includes(step);
@@ -349,9 +352,9 @@ function BargainModal({
                 </div>
                 {selectedSteps.length > 0 && (
                   <div className="mt-3 rounded-xl border border-indigo-200 dark:border-sky-900 bg-indigo-50 dark:bg-sky-900/20 px-4 py-3">
-                    <p className="text-xs text-indigo-600 dark:text-sky-400">Total reduction: {formatPrice(stepSum)}</p>
+                    <p className="text-xs text-indigo-600 dark:text-sky-400">{t("sales.totalreduction")}: {formatPrice(stepSum)}</p>
                     <p className="text-sm font-bold text-indigo-700 dark:text-sky-400 mt-0.5">
-                      New price: {formatPrice(item.selling_price - stepSum)}
+                      {t("sales.newprice")}: {formatPrice(item.selling_price - stepSum)}
                     </p>
                   </div>
                 )}
@@ -372,14 +375,14 @@ function BargainModal({
             onClick={onClose}
             className="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform"
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
             onClick={handleApply}
             className="rounded-xl bg-indigo-600 dark:bg-sky-500 px-6 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform"
           >
-            OK
+            {t("sales.ok")}
           </button>
         </div>
       </div>
@@ -401,6 +404,7 @@ function CartRow({
   onBargain: (item: CartItem) => void;
 }) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const unitPrice = cartUnitPrice(item);
   const subtotal = cartSubtotal(item);
   const packs = bulkUnits(item);
@@ -412,7 +416,7 @@ function CartRow({
           <p className="truncate text-sm font-semibold text-slate-800 dark:text-white">{item.name}</p>
           {showBulk && (
             <span className="shrink-0 rounded-md bg-sky-100 dark:bg-sky-950/50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-600 dark:text-sky-400">
-              Bulk {packs}×
+              {t("sales.bulk")} {packs}×
             </span>
           )}
         </div>
@@ -420,17 +424,17 @@ function CartRow({
           {item.bargainPrice != null ? (
             <>
               <span className="line-through">{formatPrice(item.selling_price)}</span>{" "}
-              <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatPrice(unitPrice)} each</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">{formatPrice(unitPrice)} {t("sales.each")}</span>
             </>
           ) : showBulk ? (
             <>
               <span className="line-through">{formatPrice(item.selling_price * item.quantity)}</span>{" "}
               <span className="font-bold text-sky-600 dark:text-sky-400">
-                {formatPrice(item.bulk_price ?? 0)} × {packs} pack{packs > 1 ? "s" : ""}
+                {formatPrice(item.bulk_price ?? 0)} × {packs} {packs > 1 ? t("sales.packs") : t("sales.pack")}
               </span>
             </>
           ) : (
-            <>{formatPrice(item.selling_price)} each</>
+            <>{formatPrice(item.selling_price)} {t("sales.each")}</>
           )}
         </p>
       </div>
@@ -441,7 +445,7 @@ function CartRow({
           type="button"
           onClick={() => onQtyChange(item.id, item.quantity - 1)}
           className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-transform"
-          aria-label="Decrease quantity"
+          aria-label={t("sales.decreaseqty")}
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 12H5" />
@@ -453,7 +457,7 @@ function CartRow({
           type="button"
           onClick={() => onQtyChange(item.id, item.quantity + 1)}
           className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 transition-transform"
-          aria-label="Increase quantity"
+          aria-label={t("sales.increaseqty")}
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M19 12H5" />
@@ -469,7 +473,7 @@ function CartRow({
           type="button"
           onClick={() => onBargain(item)}
           className="flex h-7 items-center gap-1 rounded-xl bg-amber-50 dark:bg-amber-900/20 px-2 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
-          title="Bargain this item"
+          title={t("sales.bargaintitle")}
         >
           {item.bargainPrice != null ? "🔄" : "🪙"}
         </button>
@@ -480,7 +484,7 @@ function CartRow({
         type="button"
         onClick={() => onRemove(item.id)}
         className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl text-slate-300 dark:text-slate-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 hover:text-rose-500 transition-colors"
-        aria-label="Remove item"
+        aria-label={t("sales.removeitem")}
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -509,6 +513,7 @@ function BorrowCardModal({
   onComplete: () => void;
 }) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<BorrowerOption[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<BorrowerOption | null>(null);
@@ -578,20 +583,20 @@ function BorrowCardModal({
 
   const handleProcess = async () => {
     if (!selectedAccount) {
-      setError("Please select a borrower account.");
+      setError(t("sales.selectborrower"));
       return;
     }
     if (items.length === 0) {
-      setError("No items in the borrow card.");
+      setError(t("sales.noitemsborrow"));
       return;
     }
     if (downpaymentPct <= 0) {
-      setError("Please select a downpayment percentage.");
+      setError(t("sales.selectdownpayment"));
       return;
     }
     if (maxLendingExceeded) {
       setError(
-        `Borrow total (${formatPrice(total)}) exceeds this borrower's max lending amount (${formatPrice(Number(selectedAccount.max_lending_amount))}).`
+        `${t("sales.borrowtotalexceeds")} ${formatPrice(total)} ${t("sales.vsmax")} ${formatPrice(Number(selectedAccount.max_lending_amount))}.`
       );
       return;
     }
@@ -623,8 +628,8 @@ function BorrowCardModal({
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to create borrow card");
-      setSuccess(`Borrow card ${data.card_code} created successfully! Downpayment of ${formatPrice(data.downpayment_amount ?? downpaymentAmount)} deducted; balance of ${formatPrice(data.amount_due ?? (total - downpaymentAmount))} remains.`);
+      if (!res.ok) throw new Error(data.detail || t("sales.createborrowfailed"));
+      setSuccess(`${t("sales.borrowcard")} ${data.card_code} ${t("sales.createdsuccess")} ${t("sales.downpayment")}: ${formatPrice(data.downpayment_amount ?? downpaymentAmount)}; ${t("sales.balance")}: ${formatPrice(data.amount_due ?? (total - downpaymentAmount))}.`);
       setTimeout(() => {
         onComplete();
       }, 1500);
@@ -639,7 +644,7 @@ function BorrowCardModal({
     <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-2xl rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">Create Borrow Card</h3>
+          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t("sales.createborrowcard")}</h3>
           <button
             type="button"
             onClick={onClose}
@@ -664,7 +669,7 @@ function BorrowCardModal({
 
         {/* Account selection */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Select Borrower Account</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">{t("sales.selectborroweraccount")}</label>
           {selectedAccount ? (
             <div className="mt-1 flex items-center justify-between rounded-xl border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/20 px-4 py-2.5">
               <div>
@@ -678,7 +683,7 @@ function BorrowCardModal({
                 onClick={() => setSelectedAccount(null)}
                 className="text-xs font-semibold text-sky-600 dark:text-sky-400 hover:underline"
               >
-                Change
+                {t("sales.change")}
               </button>
             </div>
           ) : (
@@ -688,7 +693,7 @@ function BorrowCardModal({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => searchResults.length > 0 && setSearchResults(searchResults)}
-                placeholder="Search by name, government ID, or barcode…"
+                placeholder={t("sales.borrowsearchplaceholder")}
                 className="mt-1 block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none"
               />
               {searchResults.length > 0 && (
@@ -716,11 +721,11 @@ function BorrowCardModal({
 
         {/* Borrow type */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Type of Borrow</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{t("sales.borrowtype")}</label>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { value: "sales_credit", label: "Sales Credit" },
-              { value: "layaway", label: "Layaway" },
+              { value: "sales_credit", label: t("sales.salescredit") },
+              { value: "layaway", label: t("sales.layaway") },
             ].map((opt) => (
               <button
                 key={opt.value}
@@ -740,12 +745,12 @@ function BorrowCardModal({
 
         {/* Duration */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Duration of Lending</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{t("sales.lendingduration")}</label>
           <div className="flex gap-3 mb-2">
             {[
-              { value: "day", label: "Day" },
-              { value: "month", label: "Month" },
-              { value: "year", label: "Year" },
+              { value: "day", label: t("sales.day") },
+              { value: "month", label: t("sales.month") },
+              { value: "year", label: t("sales.year") },
             ].map((opt) => (
               <label key={opt.value} className="flex items-center gap-2">
                 <input
@@ -770,7 +775,7 @@ function BorrowCardModal({
 
         {/* Downpayment */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Downpayment Percentage</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{t("sales.downpaymentpct")}</label>
           <div className="flex gap-3">
             {downpaymentOptions.map((pct) => (
               <button
@@ -788,25 +793,25 @@ function BorrowCardModal({
             ))}
           </div>
           <div className="mt-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-4 py-3 flex justify-between text-sm">
-            <span className="text-slate-500 dark:text-slate-400">Calculated Downpayment ({downpaymentPct}%) — deducted at creation</span>
+            <span className="text-slate-500 dark:text-slate-400">{t("sales.calculateddownpayment")} ({downpaymentPct}%) — {t("sales.deductedatcreation")}</span>
             <span className="font-bold text-slate-800 dark:text-white">{formatPrice(downpaymentAmount)}</span>
           </div>
           <div className="mt-1 rounded-xl bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900 px-4 py-3 flex justify-between text-sm">
-            <span className="text-slate-500 dark:text-slate-400">Amount Due (remaining balance)</span>
+            <span className="text-slate-500 dark:text-slate-400">{t("sales.amountdue")} ({t("sales.balance")})</span>
             <span className="font-bold text-indigo-700 dark:text-sky-400">{formatPrice(total - downpaymentAmount)}</span>
           </div>
         </div>
 
         {/* Installment interval */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Installment Interval</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{t("sales.installmentinterval")}</label>
           <div className="flex gap-3 mb-2">
             {(
               [
-                { value: "none", label: "None" },
-                { value: "day", label: "Day" },
-                { value: "month", label: "Month" },
-                { value: "year", label: "Year" },
+                { value: "none", label: t("sales.none") },
+                { value: "day", label: t("sales.day") },
+                { value: "month", label: t("sales.month") },
+                { value: "year", label: t("sales.year") },
               ] as const
             ).map((opt) => (
               <label key={opt.value} className="flex items-center gap-2">
@@ -823,7 +828,7 @@ function BorrowCardModal({
           </div>
           {installmentInterval !== "none" && (
             <div className="flex items-center gap-3">
-              <label className="text-xs text-slate-500 dark:text-slate-400">Every</label>
+              <label className="text-xs text-slate-500 dark:text-slate-400">{t("sales.every")}</label>
               <input
                 type="number"
                 min={1}
@@ -838,7 +843,7 @@ function BorrowCardModal({
 
         {/* Late fee */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Late Fee</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">{t("sales.latefee")}</label>
           <input
             type="number"
             value={lateFee}
@@ -849,10 +854,10 @@ function BorrowCardModal({
 
         {/* Items */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Items ({items.length})</label>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{t("sales.items")} ({items.length})</label>
           <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
             {items.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-slate-400 dark:text-slate-500">No items in the borrow card.</div>
+              <div className="px-4 py-6 text-center text-sm text-slate-400 dark:text-slate-500">{t("sales.noitemsborrow")}</div>
             ) : (
               items.map((li) => {
                 const item = cart.find((c) => c.id === li.id);
@@ -862,7 +867,7 @@ function BorrowCardModal({
                   <div key={li.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-800 dark:text-white">{item.name}</p>
-                      <p className="text-xs text-slate-400">{formatPrice(cartUnitPrice(item))} each</p>
+                      <p className="text-xs text-slate-400">{formatPrice(cartUnitPrice(item))} {t("sales.each")}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -899,7 +904,7 @@ function BorrowCardModal({
                         type="button"
                         onClick={() => setItems((prev) => prev.filter((rv) => rv.id !== li.id))}
                         className="rounded-full px-2 py-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
-                        title="Remove item"
+                        title={t("sales.removeitem")}
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -912,12 +917,12 @@ function BorrowCardModal({
             )}
           </div>
           <div className="mt-2 flex justify-between text-sm font-bold text-slate-800 dark:text-white">
-            <span>Card Total</span>
+            <span>{t("sales.cardtotal")}</span>
             <span>{formatPrice(total)}</span>
           </div>
           {maxLendingExceeded && (
             <div className="mt-2 rounded-xl bg-rose-50 dark:bg-rose-950/20 p-3 text-sm text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-950">
-              This borrower has reached or passed their borrow limit. Total incl. outstanding ({formatPrice(total + Number(selectedAccount?.outstanding_amount || 0))}) exceeds the max lending amount ({formatPrice(Number(selectedAccount?.max_lending_amount))}). Reduce items or choose a different borrower.
+              {t("sales.limitreached")} {t("sales.totallimitdetail")} ({formatPrice(total + Number(selectedAccount?.outstanding_amount || 0))}) {t("sales.exceedsmax")} ({formatPrice(Number(selectedAccount?.max_lending_amount))}). {t("sales.reduceitems")}
             </div>
           )}
         </div>
@@ -929,7 +934,7 @@ function BorrowCardModal({
             disabled={loading}
             className="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -937,14 +942,14 @@ function BorrowCardModal({
             disabled={loading || success != null || maxLendingExceeded || items.length === 0}
             className="rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white px-6 py-2.5 text-sm font-bold transition-colors"
           >
-            {loading ? "Processing..." : "Process"}
+            {loading ? t("sales.processing") : t("sales.process")}
           </button>
         </div>
       </div>
 
       {limitToast && selectedAccount && (
         <ScanToast
-          message={`Borrow total (${formatPrice(total)}) plus outstanding balance (${formatPrice(Number(selectedAccount.outstanding_amount || 0))}) has reached or passed this borrower's borrow limit (${formatPrice(Number(selectedAccount.max_lending_amount))}). Reduce items or choose a different borrower.`}
+          message={`${t("sales.borrowtotal")} (${formatPrice(total)}) ${t("sales.plusoutstanding")} (${formatPrice(Number(selectedAccount.outstanding_amount || 0))}) ${t("sales.reachedlimit")} (${formatPrice(Number(selectedAccount.max_lending_amount))}). ${t("sales.reduceitems")}`}
           type="error"
           onDismiss={() => setLimitToast(false)}
           duration={5000}
@@ -956,6 +961,7 @@ function BorrowCardModal({
 
 export default function SalesTerminal() {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -1046,23 +1052,23 @@ export default function SalesTerminal() {
       try {
         const res = await fetch(`/api/products/lookup?barcode=${encodeURIComponent(trimmed)}`);
         if (!res.ok) {
-          showToast("error", `No product found for barcode: ${trimmed}`);
+          showToast("error", `${t("sales.nobarcode")}: ${trimmed}`);
           return;
         }
         const product: ProductInfo = await res.json();
         addToCart(product);
       } catch {
-        showToast("error", "Network error. Could not look up barcode.");
+        showToast("error", t("sales.networkerror"));
       }
     },
-    [addToCart, showToast]
+    [addToCart, showToast, t]
   );
 
   // Hardware (USB / Bluetooth / laser) scanners are keyboard-wedge devices:
   // listen for their fast key bursts for as long as the sales page is open.
   useKeyboardScanner({
     onBarcode: scanBarcode,
-    onNoBarcode: () => showToast("error", "No barcode detected — please scan again."),
+    onNoBarcode: () => showToast("error", t("sales.nobarcodedetected")),
     captureRef: barcodeInputRef,
   });
 
@@ -1089,6 +1095,7 @@ export default function SalesTerminal() {
 
   const handleCheckout = async (paymentMethod: "Cash" | "Card") => {
     if (cart.length === 0) return;
+
     setCheckoutStatus("loading");
     setErrorMessage(null);
     try {
@@ -1113,7 +1120,7 @@ export default function SalesTerminal() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || "Checkout failed");
+        throw new Error(errorData.detail || t("sales.checkoutfailed"));
       }
 
       const data = await response.json();
@@ -1122,7 +1129,7 @@ export default function SalesTerminal() {
       setCart([]);
 
       if (data.receipt_printed === true) {
-        showToast("success", `Receipt printed successfully (${data.invoice_number})`);
+        showToast("success", `${t("sales.receiptprinted")} (${data.invoice_number})`);
         setReceiptPreview({
           invoice: data.invoice_number,
           lines: cartSnapshot,
@@ -1132,13 +1139,13 @@ export default function SalesTerminal() {
           cashierName: auth?.username || "",
         });
       } else if (data.receipt_printed === false) {
-        showToast("error", `Receipt not printed: ${data.receipt_error || "printer not connected or unavailable"}`);
+        showToast("error", `${t("sales.receiptnotprinted")}: ${data.receipt_error || t("sales.printernotavailable")}`);
       }
 
       setTimeout(() => setCheckoutStatus("idle"), 3000);
     } catch (err: any) {
       setCheckoutStatus("error");
-      setErrorMessage(err.message || "An unknown error occurred during checkout");
+      setErrorMessage(err.message || t("sales.checkouterror"));
     }
   };
 
@@ -1158,12 +1165,12 @@ export default function SalesTerminal() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-12 text-center border border-slate-200 dark:border-slate-800 shadow-sm max-w-md">
           <div className="text-5xl mb-4">⚠️</div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">System Not Configured</h2>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">{t("sales.notconfigured")}</h2>
           <p className="text-slate-500 dark:text-slate-400 mb-4">
-            A Manager 1 user must be created and the system currency configured before sales can be made.
+            {t("sales.notconfigured.desc")}
           </p>
           <p className="text-sm text-slate-400 dark:text-slate-500">
-            Please ask an administrator to create a Manager 1 account.
+            {t("sales.notconfigured.action")}
           </p>
         </div>
       </div>
@@ -1185,7 +1192,7 @@ export default function SalesTerminal() {
           <span className="text-2xl">{toast.type === "success" ? "✅" : "❌"}</span>
           <div>
             <p className={`text-sm font-bold ${toast.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-              {toast.type === "success" ? "Receipt Printed" : "Print Failed"}
+              {toast.type === "success" ? t("sales.receiptprintedtitle") : t("sales.printfailed")}
             </p>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>{toast.message}</p>
           </div>
@@ -1204,10 +1211,10 @@ export default function SalesTerminal() {
           style={{ backgroundColor: "var(--color-card)", color: "var(--color-text)" }}
         >
           <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-slate-100 dark:border-slate-800">
-            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Receipt Preview</p>
+            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t("sales.receiptpreview")}</p>
             <button
               onClick={() => setReceiptPreview(null)}
-              aria-label="Close receipt preview"
+              aria-label={t("sales.closereceipt")}
               className="rounded-full p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -1229,16 +1236,16 @@ export default function SalesTerminal() {
               </div>
               <div className="my-2 text-center">{"=".repeat(34)}</div>
               <div style={{ color: "var(--color-text-muted)" }}>
-                <div>Invoice: {receiptPreview.invoice}</div>
-                <div>Date: {receiptPreview.date}</div>
-                <div>Cashier: {receiptPreview.cashierName || "N/A"}</div>
-                <div>Payment: {receiptPreview.payment}</div>
+                <div>{t("sales.invoice")}: {receiptPreview.invoice}</div>
+                <div>{t("sales.date")}: {receiptPreview.date}</div>
+                <div>{t("sales.cashier")}: {receiptPreview.cashierName || "N/A"}</div>
+                <div>{t("sales.payment")}: {receiptPreview.payment}</div>
               </div>
               <div className="my-2">{"-".repeat(34)}</div>
               {receiptPreview.lines.map((l, i) => (
                 <div key={i}>
                   <div className="flex justify-between">
-                    <span className="truncate pr-2">{l.bulk ? `${l.name} (BULK)` : l.name}</span>
+                    <span className="truncate pr-2">{l.bulk ? `${l.name} (${t("sales.bulk")})` : l.name}</span>
                     <span className="shrink-0">{l.quantity} × {formatPrice(l.price)}</span>
                   </div>
                   <div className="flex justify-end">
@@ -1248,15 +1255,15 @@ export default function SalesTerminal() {
               ))}
               <div className="my-2">{"-".repeat(34)}</div>
               <div className="flex justify-between font-bold">
-                <span>TOTAL</span>
+                <span>{t("sales.total")}</span>
                 <span>{formatPrice(receiptPreview.total)}</span>
               </div>
               <div className="my-2 text-center">{"=".repeat(34)}</div>
-              <div className="text-center font-bold">THANK YOU!</div>
+              <div className="text-center font-bold">{t("sales.thankyou")}</div>
             </div>
           </div>
           <div className="px-4 py-2 text-center text-[10px] text-slate-400 dark:text-slate-500 border-t border-slate-100 dark:border-slate-800">
-            Press <kbd className="rounded bg-slate-100 dark:bg-slate-800 px-1">Esc</kbd> or click ✕ to close
+            {t("sales.press")} <kbd className="rounded bg-slate-100 dark:bg-slate-800 px-1">Esc</kbd> {t("sales.orclickclose")}
           </div>
         </div>
       )}
@@ -1265,13 +1272,13 @@ export default function SalesTerminal() {
       <div className="flex flex-col gap-4 lg:w-[55%]">
 
         <div className="rounded-3xl bg-gradient-to-br from-indigo-600 dark:from-sky-500 to-violet-600 dark:to-sky-600 px-6 py-5 text-white shadow-md">
-          <h1 className="text-2xl font-bold tracking-tight">Sales Terminal</h1>
-          <p className="mt-0.5 text-sm text-indigo-200 dark:text-sky-200">Search or scan products to build your cart</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t("sales.title")}</h1>
+          <p className="mt-0.5 text-sm text-indigo-200 dark:text-sky-200">{t("sales.subtitle")}</p>
         </div>
 
         <div className="rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-sm border border-slate-200 dark:border-slate-700">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-            🔍 Product Search
+            🔍 {t("sales.productsearch")}
           </h2>
           <SearchBar onSelect={addToCart} />
         </div>
@@ -1279,7 +1286,7 @@ export default function SalesTerminal() {
         {!barcodeScannerDisabled && (
           <div className="rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-sm border border-slate-200 dark:border-slate-700">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-              📷 Barcode Scanner
+              📷 {t("sales.barcodescanner")}
             </h2>
             <BarcodeScanner onProductScanned={addToCart} inputRef={barcodeInputRef} />
           </div>
@@ -1292,8 +1299,8 @@ export default function SalesTerminal() {
 
           <div className="flex items-center justify-between rounded-3xl bg-white dark:bg-slate-900 px-5 py-4 shadow-sm border border-slate-200 dark:border-slate-700">
             <div>
-              <h2 className="text-lg font-bold text-slate-800 dark:text-white">Checkout</h2>
-              <p className="text-xs text-slate-400 dark:text-slate-500">{itemCount} item{itemCount !== 1 ? "s" : ""} in cart</p>
+              <h2 className="text-lg font-bold text-slate-800 dark:text-white">{t("sales.checkout")}</h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500">{itemCount} {itemCount !== 1 ? t("sales.cartitems") : t("sales.cartitem")} {t("sales.incart")}</p>
             </div>
             {cart.length > 0 && (
               <button
@@ -1302,7 +1309,7 @@ export default function SalesTerminal() {
                 onClick={clearCart}
                 className="rounded-xl bg-rose-50 dark:bg-rose-900/20 px-3 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-colors"
               >
-                Clear all
+                {t("sales.clearall")}
               </button>
             )}
           </div>
@@ -1310,7 +1317,7 @@ export default function SalesTerminal() {
           <div className="flex-1 overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-4 shadow-sm border border-slate-200 dark:border-slate-700">
             {checkoutStatus === "success" && (
               <div className="mb-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 p-4 text-sm font-medium text-emerald-600 dark:text-emerald-400 text-center border border-emerald-200 dark:border-emerald-950">
-                🎉 Checkout completed successfully!
+                🎉 {t("sales.checkoutsuccess")}
               </div>
             )}
             {checkoutStatus === "error" && errorMessage && (
@@ -1321,8 +1328,8 @@ export default function SalesTerminal() {
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <div className="mb-3 text-5xl">🛒</div>
-                <p className="text-sm font-medium text-slate-400 dark:text-slate-500">Cart is empty</p>
-                <p className="mt-1 text-xs text-slate-300 dark:text-slate-600">Search a product or scan a barcode to get started</p>
+                <p className="text-sm font-medium text-slate-400 dark:text-slate-500">{t("sales.cartempty")}</p>
+                <p className="mt-1 text-xs text-slate-300 dark:text-slate-600">{t("sales.cartemptyhint")}</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -1344,15 +1351,15 @@ export default function SalesTerminal() {
             <div className="rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-sm border border-slate-200 dark:border-slate-700">
               <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
                 <div className="flex justify-between">
-                  <span>Subtotal</span>
+                  <span>{t("sales.subtotal")}</span>
                   <span>{formatPrice(total)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-slate-400 dark:text-slate-500">
-                  <span>Tax (0%)</span>
+                  <span>{t("sales.tax")} (0%)</span>
                   <span>{formatPrice(0)}</span>
                 </div>
                 <div className="mt-2 border-t border-slate-100 dark:border-slate-700 pt-2 flex justify-between text-base font-bold text-slate-800 dark:text-white">
-                  <span>Total</span>
+                  <span>{t("common.total")}</span>
                   <span className="text-indigo-700 dark:text-sky-400">{formatPrice(total)}</span>
                 </div>
               </div>
@@ -1363,9 +1370,9 @@ export default function SalesTerminal() {
                   type="button"
                   disabled={checkoutStatus === "loading"}
                   onClick={() => handleCheckout("Cash")}
-                  className="rounded-2xl border-2 border-indigo-200 dark:border-sky-900 bg-indigo-50 dark:bg-sky-900/20 py-3 text-sm font-bold text-indigo-700 dark:text-sky-400 hover:bg-indigo-100 dark:hover:bg-sky-900/30 active:scale-95 transition-all disabled:opacity-50"
+                  className="rounded-2xl border-2 border-indigo-200 dark:border-sky-900 bg-indi-900/20 py-3 text-sm font-bold text-indigo-700 dark:text-sky-400 hover:bg-indigo-100 dark:hover:bg-sky-900/30 active:scale-95 transition-all disabled:opacity-50"
                 >
-                  {checkoutStatus === "loading" ? "..." : "💵 Cash"}
+                  {checkoutStatus === "loading" ? "..." : `💵 ${t("sales.cash")}`}
                 </button>
                 <button
                   id="checkout-card"
@@ -1378,7 +1385,7 @@ export default function SalesTerminal() {
                       : "bg-indigo-600 dark:bg-sky-500 text-white hover:bg-indigo-700 dark:hover:bg-sky-600"
                   }`}
                 >
-                  {checkoutStatus === "loading" ? "..." : cardDisabled ? "🚫 Card" : "💳 Card"}
+                  {checkoutStatus === "loading" ? "..." : cardDisabled ? `🚫 ${t("sales.card")}` : `💳 ${t("sales.card")}`}
                 </button>
                 {lendingEnabled && isManager && (
                   <button
@@ -1388,7 +1395,7 @@ export default function SalesTerminal() {
                     onClick={() => setShowLendModal(true)}
                     className="col-span-2 rounded-2xl border-2 border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-900/20 py-3 text-sm font-bold text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 active:scale-95 transition-all disabled:opacity-50"
                   >
-                    🏦 Lend
+                    🏦 {t("sales.lend")}
                   </button>
                 )}
               </div>

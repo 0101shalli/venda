@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
+import { useLanguage } from "../context/LanguageContext";
 
 type SidebarProps = {
   role: string;
@@ -8,16 +9,17 @@ type SidebarProps = {
 };
 
 const menuItems = [
-  { path: "/sales", label: "Sales Terminal", roles: ["cashier", "manager1", "manager2", "admin"] },
-  { path: "/orders", label: "Orders", roles: ["cashier", "manager1", "manager2", "admin"] },
-  { path: "/inventory", label: "Inventory", roles: ["manager1", "admin"] },
-  { path: "/lending", label: "Lending", roles: ["manager1", "manager2", "admin"], settingKey: "lending_enabled" },
-  { path: "/analytics", label: "Analytics", roles: ["manager1", "manager2", "admin"] },
-  { path: "/users", label: "User Management", roles: ["manager1", "admin"] },
-  { path: "/settings", label: "Settings", roles: ["cashier", "manager1", "manager2", "admin"] },
+  { path: "/sales", labelKey: "sidebar.sales", roles: ["cashier", "manager1", "manager2", "admin"] },
+  { path: "/orders", labelKey: "sidebar.orders", roles: ["cashier", "manager1", "manager2", "admin"] },
+  { path: "/inventory", labelKey: "sidebar.inventory", roles: ["manager1", "admin"] },
+  { path: "/lending", labelKey: "sidebar.lending", roles: ["manager1", "manager2", "admin"], settingKey: "lending_enabled" },
+  { path: "/analytics", labelKey: "sidebar.analytics", roles: ["manager1", "manager2", "admin"] },
+  { path: "/users", labelKey: "sidebar.users", roles: ["manager1", "admin"] },
+  { path: "/settings", labelKey: "sidebar.settings", roles: ["cashier", "manager1", "manager2", "admin"] },
 ];
 
 export default function Sidebar({ role, username, onLogout }: SidebarProps) {
+  const { t } = useLanguage();
   const [storeName, setStoreName] = useState("");
   const [storeLogo, setStoreLogo] = useState("");
   const [lendingEnabled, setLendingEnabled] = useState(false);
@@ -63,7 +65,7 @@ export default function Sidebar({ role, username, onLogout }: SidebarProps) {
           {username}
         </p>
         <p className="text-xs uppercase tracking-wider" style={{ color: "var(--color-text-muted)" }}>
-          Role: {role}
+          {t("sidebar.role")}: {role}
         </p>
       </div>
 
@@ -86,7 +88,7 @@ export default function Sidebar({ role, username, onLogout }: SidebarProps) {
                 color: isActive ? (document.documentElement.classList.contains("dark") ? "#000" : "#fff") : "var(--color-text)",
               })}
             >
-              {item.label}
+              {t(item.labelKey)}
             </NavLink>
           ))}
 
@@ -96,7 +98,7 @@ export default function Sidebar({ role, username, onLogout }: SidebarProps) {
           className="mt-auto flex items-center justify-between rounded-lg px-4 py-3 transition-colors hover:opacity-75"
           style={{ color: "var(--color-text)" }}
         >
-          Logout
+          {t("sidebar.logout")}
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>

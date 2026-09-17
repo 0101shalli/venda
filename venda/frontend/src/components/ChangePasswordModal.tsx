@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { fetchWithAuthInterceptors, getAuth, setAuth } from "../services/auth";
+import { useLanguage } from "../context/LanguageContext";
 
 export default function ChangePasswordModal({ onComplete }: { onComplete: () => void }) {
+  const { t } = useLanguage();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
@@ -9,7 +11,7 @@ export default function ChangePasswordModal({ onComplete }: { onComplete: () => 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (password !== confirm) {
-      setError("Passwords must match.");
+      setError(t("changepw.nomatch"));
       return;
     }
 
@@ -25,19 +27,19 @@ export default function ChangePasswordModal({ onComplete }: { onComplete: () => 
       }
       onComplete();
     } catch (error) {
-      setError("Unable to update password. Please try again.");
+      setError(t("changepw.error"));
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
       <div className="w-full max-w-xl rounded-3xl bg-white p-8 shadow-xl">
-        <h2 className="text-2xl font-semibold">Change Password</h2>
-        <p className="mt-2 text-slate-600">This is required before you can continue.</p>
+        <h2 className="text-2xl font-semibold">{t("changepw.title")}</h2>
+        <p className="mt-2 text-slate-600">{t("changepw.subtitle")}</p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700">New Password</label>
+            <label className="block text-sm font-medium text-slate-700">{t("changepw.newpw")}</label>
             <input
               type="password"
               value={password}
@@ -48,7 +50,7 @@ export default function ChangePasswordModal({ onComplete }: { onComplete: () => 
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700">Confirm Password</label>
+            <label className="block text-sm font-medium text-slate-700">{t("changepw.confirmpw")}</label>
             <input
               type="password"
               value={confirm}
@@ -61,7 +63,7 @@ export default function ChangePasswordModal({ onComplete }: { onComplete: () => 
           {error && <p className="text-sm text-rose-600">{error}</p>}
 
           <button type="submit" className="w-full rounded-xl bg-slate-900 px-4 py-3 text-white hover:bg-slate-700">
-            Update Password
+            {t("changepw.update")}
           </button>
         </form>
       </div>

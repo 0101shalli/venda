@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { fetchStoreBranding, printBrandingFooterHtml, printBrandingHeaderHtml } from "../components/creditsShared";
 
 interface BorrowCardSummary {
@@ -92,6 +93,20 @@ const STATUS_STYLE: Record<string, string> = {
   cancelled: "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 line-through",
 };
 
+const statuses = ["", "unpaid", "paid", "missed_installment", "expired", "cancelled", "pending"];
+
+function getStatusLabel(t: (key: string) => string, status: string): string {
+  const map: Record<string, string> = {
+    pending: t("lending.status.pending"),
+    paid: t("lending.status.paid"),
+    unpaid: t("lending.status.unpaid"),
+    missed_installment: t("lending.status.missed"),
+    expired: t("lending.status.expired"),
+    cancelled: t("lending.status.cancelled"),
+  };
+  return map[status] || status;
+}
+
 function AccountFormModal({
   account,
   onClose,
@@ -101,6 +116,7 @@ function AccountFormModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<LendingAccount>(account ?? EMPTY_ACCOUNT);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -169,7 +185,7 @@ function AccountFormModal({
       <div className="w-full max-w-2xl rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-            {account ? "Edit Lending Account" : "Create Lending Account"}
+            {account ? t("lending.editlendingaccount") : t("lending.createaccount2")}
           </h3>
           <button
             type="button"
@@ -377,6 +393,7 @@ function BorrowCardsModal({
   onChanged?: () => void;
 }) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [cards, setCards] = useState<BorrowCardSummary[]>(account.borrow_cards || []);
   const [viewingCard, setViewingCard] = useState<BorrowCardSummary | null>(null);
 
@@ -393,7 +410,7 @@ function BorrowCardsModal({
       <div className="w-full max-w-3xl rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">Borrow Cards</h3>
+            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t("lending.borrowcards2")}</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400">{account.full_name} · {account.barcode}</p>
           </div>
           <button
@@ -409,7 +426,7 @@ function BorrowCardsModal({
 
         {cards.length === 0 ? (
           <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-10 text-center text-slate-500 dark:text-slate-400">
-            No borrow cards for this account yet.
+            {t("lending.nocards")}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3">
@@ -422,10 +439,10 @@ function BorrowCardsModal({
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{card.card_code}</span>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[card.status]}`}>
-                      {STATUS_LABEL[card.status]}
+{getStatusLabel(t, card.status)}
                     </span>
                     <span className="rounded-full px-2 py-0.5 text-xs font-semibold bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
-                      {card.borrow_type === "layaway" ? "Layaway" : "Sales Credit"}
+                      {card.borrow_type === "layaway" ? t("lending.layaway") : t("lending.salescredit")}
                     </span>
                   </div>
                   <div className="mt-1 font-bold text-slate-800 dark:text-slate-100">{formatPrice(card.total_amount)}</div>
@@ -441,7 +458,7 @@ function BorrowCardsModal({
                   onClick={() => setViewingCard(card)}
                   className="shrink-0 rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 text-sm font-semibold transition-colors"
                 >
-                  View & Print
+                  {t("lending.viewprint")}
                 </button>
               </div>
             ))}
@@ -458,6 +475,7 @@ function BorrowCardsModal({
 
 function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClose: () => void; onChanged?: () => void }) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [card, setCard] = useState<any | null>(null);
   const [items, setItems] = useState<CardItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -594,31 +612,31 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
 
     const win = window.open("", "_blank", "width=400,height=600");
     if (!win) return;
-    win.document.write(`<html><head><title>Borrow Card</title></head><body>
+    win.document.write(`<html><head><title>${t("lending.borrowcarditems")}</title></head><body>
       <div style="font-family:Arial,sans-serif;padding:24px;border:2px solid #0F172A;border-radius:12px;max-width:340px;margin:auto;">
         <div style="text-align:center;border-bottom:2px solid #0F172A;padding-bottom:12px;">
           ${logoHtml}
           <div style="font-size:12px;color:#475569;letter-spacing:1px;">${branding.storeName}</div>
-          <h2 style="margin:6px 0 0;font-size:20px;">BORROW CARD</h2>
+          <h2 style="margin:6px 0 0;font-size:20px;">${t("lending.borrowcards").toUpperCase()}</h2>
         </div>
         <div style="padding:12px 0;">
-          <p style="margin:2px 0;font-size:13px;"><strong>Reference:</strong> ${card.card_code}</p>
-          <p style="margin:2px 0;font-size:13px;"><strong>Borrower:</strong> ${card.borrower_name || ""}</p>
-          <p style="margin:2px 0;font-size:13px;"><strong>Type:</strong> ${card.borrow_type === "layaway" ? "Layaway" : "Sales Credit"}</p>
-          <p style="margin:2px 0;font-size:13px;"><strong>Status:</strong> ${STATUS_LABEL[card.status] || card.status}</p>
+          <p style="margin:2px 0;font-size:13px;"><strong>${t("lending.cardcode")}:</strong> ${card.card_code}</p>
+          <p style="margin:2px 0;font-size:13px;"><strong>${t("lending.letterfullname")}:</strong> ${card.borrower_name || ""}</p>
+          <p style="margin:2px 0;font-size:13px;"><strong>${t("lending.type")}:</strong> ${card.borrow_type === "layaway" ? t("lending.layaway") : t("lending.salescredit")}</p>
+          <p style="margin:2px 0;font-size:13px;"><strong>${t("lending.status")}:</strong> ${getStatusLabel(t, card.status) || card.status}</p>
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <thead><tr style="background:#f1f5f9;">
-            <th style="padding:6px 8px;text-align:left;">Item</th>
-            <th style="padding:6px 8px;text-align:center;">Qty</th>
-            <th style="padding:6px 8px;text-align:right;">Price</th>
-            <th style="padding:6px 8px;text-align:right;">Total</th>
+            <th style="padding:6px 8px;text-align:left;">${t("common.description")}</th>
+            <th style="padding:6px 8px;text-align:center;">${t("common.quantity")}</th>
+            <th style="padding:6px 8px;text-align:right;">${t("common.price")}</th>
+            <th style="padding:6px 8px;text-align:right;">${t("common.total")}</th>
           </tr></thead>
           <tbody>${itemsHtml}</tbody>
         </table>
         <div style="margin-top:12px;border-top:2px solid #0F172A;padding-top:10px;">
-          <p style="margin:2px 0;font-size:13px;text-align:right;"><strong>Total:</strong> ${formatPrice(card.total_amount)}</p>
-          <p style="margin:2px 0;font-size:13px;text-align:right;"><strong>Amount Paid:</strong> ${formatPrice(card.amount_paid)}</p>
+          <p style="margin:2px 0;font-size:13px;text-align:right;"><strong>${t("lending.total")}:</strong> ${formatPrice(card.total_amount)}</p>
+          <p style="margin:2px 0;font-size:13px;text-align:right;"><strong>${t("lending.amountpaid2")}:</strong> ${formatPrice(card.amount_paid)}</p>
         </div>
         ${footerHtml}
       </div></body></html>`);
@@ -630,7 +648,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Borrow Card Items</h3>
+          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">{t("lending.borrowcarditems")}</h3>
           <button
             type="button"
             onClick={onClose}
@@ -660,54 +678,54 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
 
             <div className="mb-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4 grid grid-cols-2 gap-3 text-sm">
               <div>
-                <p className="text-xs text-slate-400">Card Code</p>
+                <p className="text-xs text-slate-400">{t("lending.cardcode")}</p>
                 <p className="font-mono font-semibold text-slate-800 dark:text-white">{card.card_code}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Status</p>
+                <p className="text-xs text-slate-400">{t("lending.status")}</p>
                 <span className={`inline-block mt-0.5 rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[card.status]}`}>
-                  {STATUS_LABEL[card.status] || card.status}
+                  {getStatusLabel(t, card.status)}
                 </span>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Type</p>
+                <p className="text-xs text-slate-400">{t("lending.type")}</p>
                 <p className="font-semibold text-slate-800 dark:text-white">
-                  {card.borrow_type === "layaway" ? "Layaway" : "Sales Credit"}
+                  {card.borrow_type === "layaway" ? t("lending.layaway") : t("lending.salescredit")}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Total</p>
+                <p className="text-xs text-slate-400">{t("lending.total")}</p>
                 <p className="font-bold text-slate-800 dark:text-white">{formatPrice(card.total_amount)}
-                  {(card.late_fee_applied && !!(card.late_fee || 0)) && (
-                    <span className="ml-1 text-[10px] text-rose-500 dark:text-rose-400">incl. late fee</span>
+                   {(card.late_fee_applied && !!(card.late_fee || 0)) && (
+                    <span className="ml-1 text-[10px] text-rose-500 dark:text-rose-400">{t("lending.incllatefee")}</span>
                   )}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Amount Due</p>
+                <p className="text-xs text-slate-400">{t("lending.amountdue")}</p>
                 <p className="font-bold text-indigo-700 dark:text-sky-400">{formatPrice(Math.max(0, Number(card.total_amount) - Number(card.amount_paid)))}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Downpayment</p>
+                <p className="text-xs text-slate-400">{t("lending.downpayment")}</p>
                 <p className="font-semibold text-slate-800 dark:text-white">
                   {formatPrice(card.downpayment_amount)}
-                  {card.downpayment_paid ? <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">(paid)</span> : null}
+                  {card.downpayment_paid ? <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">({t("lending.paid")})</span> : null}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Amount Paid</p>
+                <p className="text-xs text-slate-400">{t("lending.amountpaid2")}</p>
                 <p className="font-bold text-slate-800 dark:text-white">{formatPrice(card.amount_paid)}</p>
               </div>
               {Number(card.total_installments) > 0 && (
                 <div>
-                  <p className="text-xs text-slate-400">Installments</p>
+                  <p className="text-xs text-slate-400">{t("lending.installments")}</p>
                   <p className="font-semibold text-slate-800 dark:text-white">
-                    {card.paid_installments} / {card.total_installments} · {formatPrice(card.installment_amount)} each
+                    {card.paid_installments} / {card.total_installments} · {formatPrice(card.installment_amount)}
                   </p>
                 </div>
               )}
               <div>
-                <p className="text-xs text-slate-400">Next Installment</p>
+                <p className="text-xs text-slate-400">{t("lending.nextinstallment")}</p>
                 <p className={`font-semibold ${card.next_installment_date && Number(card.paid_installments ?? 0) < Number(card.total_installments) ? "text-slate-800 dark:text-white" : "text-slate-400"}`}>
                   {card.next_installment_date && Number(card.paid_installments ?? 0) < Number(card.total_installments)
                     ? new Date(card.next_installment_date).toLocaleDateString()
@@ -715,7 +733,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Due</p>
+                <p className="text-xs text-slate-400">{t("lending.due")}</p>
                 <p className="font-semibold text-slate-800 dark:text-white">
                   {card.end_date ? new Date(card.end_date).toLocaleDateString() : "—"}
                 </p>
@@ -737,9 +755,9 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
             {Number(card.total_installments) > 0 && (
               <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Installments</p>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("lending.installments")}</p>
                   <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {card.paid_installments} / {card.total_installments} paid
+                    {card.paid_installments} / {card.total_installments} {t("lending.paid")}
                   </span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
@@ -751,8 +769,8 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                   />
                 </div>
                 <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <span>Each installment: <strong className="text-slate-800 dark:text-white">{formatPrice(card.installment_amount)}</strong></span>
-                  <span>Balance: <strong className="text-slate-800 dark:text-white">{formatPrice(Math.max(0, Number(card.total_amount) - Number(card.amount_paid)))}</strong></span>
+                  <span>{t("lending.eachinstallment")} <strong className="text-slate-800 dark:text-white">{formatPrice(card.installment_amount)}</strong></span>
+                  <span>{t("lending.balance")} <strong className="text-slate-800 dark:text-white">{formatPrice(Math.max(0, Number(card.total_amount) - Number(card.amount_paid)))}</strong></span>
                 </div>
                 {!disabled && (
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -763,7 +781,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                         disabled={actionLoading}
                         className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 text-xs font-bold disabled:opacity-50 transition-colors"
                       >
-                        Pay Downpayment ({formatPrice(Math.max(0, Number(card.downpayment_amount) - Number(card.amount_paid)))})
+                        {t("lending.paydownpayment")} ({formatPrice(Math.max(0, Number(card.downpayment_amount) - Number(card.amount_paid)))})
                       </button>
                     )}
                     {Number(card.paid_installments) < Number(card.total_installments) && (
@@ -773,7 +791,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                         disabled={actionLoading}
                         className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-xs font-bold disabled:opacity-50 transition-colors"
                       >
-                        Pay Next Installment ({formatPrice(card.installment_amount)})
+                        {t("lending.paynextinstallment")} ({formatPrice(card.installment_amount)})
                       </button>
                     )}
                   </div>
@@ -783,13 +801,13 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
 
             {!disabled && (
               <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Record Payment</p>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">{t("lending.recordpayment")}</p>
                 <div className="flex gap-2">
                   <input
                     type="number"
                     min={0}
                     step="0.01"
-                    placeholder="Amount"
+                    placeholder={t("common.amount")}
                     value={paymentAmount}
                     onChange={(e) => setPaymentAmount(e.target.value === "" ? "" : Number(e.target.value))}
                     className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none"
@@ -800,7 +818,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                     disabled={actionLoading}
                     className="shrink-0 rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-5 py-2.5 text-sm font-bold disabled:opacity-50 transition-colors"
                   >
-                    {actionLoading ? "..." : "Pay"}
+                    {actionLoading ? "..." : t("lending.pay")}
                   </button>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -810,7 +828,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                     disabled={actionLoading}
                     className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 px-3 py-1.5 text-xs font-semibold hover:bg-amber-100 dark:hover:bg-amber-950/40 disabled:opacity-50 transition-colors"
                   >
-                    Mark Missed Installment
+                    {t("lending.markmissed")}
                   </button>
                   <button
                     type="button"
@@ -818,7 +836,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                     disabled={actionLoading}
                     className="rounded-xl border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-400 px-3 py-1.5 text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-950/40 disabled:opacity-50 transition-colors"
                   >
-                    Mark Expired
+                    {t("lending.markexpired")}
                   </button>
                   <button
                     type="button"
@@ -826,7 +844,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                     disabled={actionLoading}
                     className="rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 px-3 py-1.5 text-xs font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-950/40 disabled:opacity-50 transition-colors"
                   >
-                    Mark Fully Paid
+                    {t("lending.markpaid")}
                   </button>
                   <button
                     type="button"
@@ -834,12 +852,12 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                     disabled={actionLoading}
                     className="rounded-xl border border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 px-3 py-1.5 text-xs font-semibold hover:bg-rose-100 dark:hover:bg-rose-950/40 disabled:opacity-50 transition-colors"
                   >
-                    Cancel Card
+                    {t("lending.cancelcard")}
                   </button>
                 </div>
                 {card.late_fee_applied && !!(card.late_fee || 0) && (
                   <p className="mt-2 text-xs text-rose-500 dark:text-rose-400">
-                    A late fee of {formatPrice(card.late_fee)} has been added to the total.
+                    {t("lending.latefeetext").replace("{amount}", formatPrice(card.late_fee))}
                   </p>
                 )}
               </div>
@@ -847,9 +865,9 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
 
             {!disabled && (
               <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Extend Borrow Card</p>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">{t("lending.extendborrowcard")}</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                  Current end date: {card.end_date ? new Date(card.end_date).toLocaleDateString() : "—"}
+                  {t("lending.currentenddate")} {card.end_date ? new Date(card.end_date).toLocaleDateString() : "—"}
                 </p>
                 <div className="flex gap-2">
                   <input
@@ -865,7 +883,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
                     disabled={actionLoading || !extendEndDate}
                     className="shrink-0 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 text-sm font-bold disabled:opacity-50 transition-colors"
                   >
-                    {actionLoading ? "..." : "Extend"}
+                    {actionLoading ? "..." : t("lending.extend")}
                   </button>
                 </div>
               </div>
@@ -876,11 +894,11 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
               onClick={handlePrint}
               className="mt-5 w-full rounded-xl bg-sky-600 hover:bg-sky-700 text-white py-3 text-sm font-bold transition-colors"
             >
-              🖨️ Print Card
+              {t("lending.printcard")}
             </button>
           </div>
         ) : (
-          <div className="text-center text-slate-400 py-8">Failed to load card.</div>
+          <div className="text-center text-slate-400 py-8">{t("lending.failedload")}</div>
         )}
       </div>
     </div>
@@ -889,6 +907,7 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
 
 export default function LendingPage() {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [stats, setStats] = useState<any>(null);
   const [accounts, setAccounts] = useState<LendingAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -900,8 +919,8 @@ export default function LendingPage() {
   const [viewingCards, setViewingCards] = useState<LendingAccount | null>(null);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
   }, [search]);
 
   const loadStats = () => {
@@ -929,8 +948,6 @@ export default function LendingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, statusFilter]);
 
-  const statuses = ["", "unpaid", "paid", "missed_installment", "expired", "cancelled", "pending"];
-
   const StatTile = ({ label, value, isMoney, className }: { label: string; value: any; isMoney?: boolean; className?: string }) => (
     <div className={`rounded-2xl border p-4 text-center ${className || "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"}`}>
       <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</div>
@@ -943,31 +960,31 @@ export default function LendingPage() {
   return (
     <div className="flex flex-col gap-4 p-1">
       <div className="rounded-3xl bg-gradient-to-br from-indigo-600 dark:from-sky-500 to-violet-600 dark:to-sky-600 px-6 py-5 text-white shadow-md">
-        <h1 className="text-2xl font-bold tracking-tight">Lending</h1>
-        <p className="mt-0.5 text-sm text-indigo-200 dark:text-sky-200">Manage sales credit and layaway borrower accounts</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("lending.title")}</h1>
+        <p className="mt-0.5 text-sm text-indigo-200 dark:text-sky-200">{t("lending.subtitle")}</p>
       </div>
 
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
           <div className="md:col-span-3 xl:col-span-6">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Sales Credit</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">{t("lending.salescredit")}</h2>
           </div>
-          <StatTile label="Amount Paid" value={stats.sales_credit.amount_paid} isMoney className="bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900" />
-          <StatTile label="Amount Unpaid" value={stats.sales_credit.amount_unpaid} isMoney className="bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900" />
-          <StatTile label="Expired" value={stats.sales_credit.expired} className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900" />
-          <StatTile label="Missed Installments" value={stats.sales_credit.missed_installment} className="bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" />
-          <StatTile label="Cancelled" value={stats.sales_credit.cancelled} className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700" />
-          <StatTile label="Pending" value={stats.sales_credit.pending} className="bg-sky-50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900" />
+          <StatTile label={t("lending.amountpaid")} value={stats.sales_credit.amount_paid} isMoney className="bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900" />
+          <StatTile label={t("lending.amountunpaid")} value={stats.sales_credit.amount_unpaid} isMoney className="bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900" />
+          <StatTile label={t("lending.expired")} value={stats.sales_credit.expired} className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900" />
+          <StatTile label={t("lending.missedinstallments")} value={stats.sales_credit.missed_installment} className="bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" />
+          <StatTile label={t("lending.cancelled")} value={stats.sales_credit.cancelled} className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700" />
+          <StatTile label={t("lending.pending")} value={stats.sales_credit.pending} className="bg-sky-50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900" />
 
           <div className="md:col-span-3 xl:col-span-6 mt-2">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">Layaway</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">{t("lending.layaway")}</h2>
           </div>
-          <StatTile label="Amount Paid" value={stats.layaway.amount_paid} isMoney className="bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900" />
-          <StatTile label="Amount Unpaid" value={stats.layaway.amount_unpaid} isMoney className="bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900" />
-          <StatTile label="Expired" value={stats.layaway.expired} className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900" />
-          <StatTile label="Missed Installments" value={stats.layaway.missed_installment} className="bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" />
-          <StatTile label="Cancelled" value={stats.layaway.cancelled} className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700" />
-          <StatTile label="Pending" value={stats.layaway.pending} className="bg-sky-50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900" />
+          <StatTile label={t("lending.amountpaid")} value={stats.layaway.amount_paid} isMoney className="bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900" />
+          <StatTile label={t("lending.amountunpaid")} value={stats.layaway.amount_unpaid} isMoney className="bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900" />
+          <StatTile label={t("lending.expired")} value={stats.layaway.expired} className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900" />
+          <StatTile label={t("lending.missedinstallments")} value={stats.layaway.missed_installment} className="bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900" />
+          <StatTile label={t("lending.cancelled")} value={stats.layaway.cancelled} className="bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700" />
+          <StatTile label={t("lending.pending")} value={stats.layaway.pending} className="bg-sky-50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900" />
         </div>
       )}
 
@@ -981,7 +998,7 @@ export default function LendingPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search borrowers by name, government ID, or barcode…"
+              placeholder={t("lending.searchplaceholder")}
               className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2.5 pl-10 pr-4 text-sm text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
             />
           </div>
@@ -990,9 +1007,9 @@ export default function LendingPage() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
           >
-            <option value="">All statuses</option>
+            <option value="">{t("lending.allstatuses")}</option>
             {statuses.filter(Boolean).map((s) => (
-              <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+              <option key={s} value={s}>{getStatusLabel(t, s)}</option>
             ))}
           </select>
           <button
@@ -1000,14 +1017,14 @@ export default function LendingPage() {
             onClick={() => setShowCreate(true)}
             className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-5 py-2.5 text-sm font-bold whitespace-nowrap transition-colors"
           >
-            + Create Lending Account
+            + {t("lending.createaccount2")}
           </button>
         </div>
       </div>
 
       <div className="rounded-3xl bg-white dark:bg-slate-900 p-5 shadow-sm border border-slate-200 dark:border-slate-700">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-          Borrower Accounts ({accounts.length})
+          {t("lending.borroweraccounts")} ({accounts.length})
         </h2>
 
         {loading ? (
@@ -1016,44 +1033,44 @@ export default function LendingPage() {
           </div>
         ) : accounts.length === 0 ? (
           <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-10 text-center text-slate-500 dark:text-slate-400">
-            No borrower accounts found. Click "Create Lending Account" to add one.
+            {t("lending.noborrowers")}
           </div>
         ) : (
           <div className="space-y-3">
-            {accounts.map((acc) => (
-              <div key={acc.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col md:flex-row md:items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-bold text-slate-800 dark:text-white">{acc.full_name}</p>
-                    <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      {acc.borrow_cards.length} card{acc.borrow_cards.length !== 1 ? "s" : ""}
-                    </span>
+{accounts.map((acc) => (
+                <div key={acc.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-bold text-slate-800 dark:text-white">{acc.full_name}</p>
+                      <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        {acc.borrow_cards.length} {acc.borrow_cards.length !== 1 ? t("lending.cards") : t("lending.card")}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      {t("lending.govid")}: <span className="font-mono">{acc.government_id_number || "—"}</span>
+                    </p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">{t("lending.barcode")}: {acc.barcode}</p>
                   </div>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    Gov ID: <span className="font-mono">{acc.government_id_number || "—"}</span>
-                  </p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">Barcode: {acc.barcode}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingAccount(acc)}
+                      className="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                    >
+                      {t("lending.reviewedit")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewingCards(acc)}
+                      className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 text-sm font-semibold transition-colors"
+                    >
+                      {t("lending.borrowcards")}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditingAccount(acc)}
-                    className="rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                  >
-                    Review / Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewingCards(acc)}
-                    className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 text-sm font-semibold transition-colors"
-                  >
-                    Borrow Cards
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
       </div>
 
       {showCreate && (

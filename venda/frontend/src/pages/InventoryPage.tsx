@@ -4,6 +4,7 @@ import BarcodeModal from "../components/BarcodeModal";
 import MetaModal from "../components/MetaModal";
 import PrintLabelsModal from "../components/PrintLabelsModal";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 
 type InventoryStat = {
   total_products: number;
@@ -19,6 +20,25 @@ type InventoryStat = {
 
 const CATEGORIES = ["All", "General", "Electronics", "Logistics", "Apparel", "Food & Beverage", "Hardware"];
 const STOCK_STATUSES = ["All", "In Stock", "Low Stock", "Out of Stock", "Expired", "Restock Needed"];
+
+const categoryLabelMap: Record<string, string> = {
+  "All": "inventory.all",
+  "General": "inventory.gen",
+  "Electronics": "inventory.elec",
+  "Logistics": "inventory.log",
+  "Apparel": "inventory.apparel",
+  "Food & Beverage": "inventory.food",
+  "Hardware": "inventory.hardware",
+};
+
+const stockStatusLabelMap: Record<string, string> = {
+  "All": "inventory.all",
+  "In Stock": "inventory.instock",
+  "Low Stock": "inventory.lowstock",
+  "Out of Stock": "inventory.outofstock",
+  "Expired": "inventory.expired",
+  "Restock Needed": "inventory.restock",
+};
 
 // Simple fuzzy search algorithm
 function fuzzySearch(query: string, text: string): boolean {
@@ -37,6 +57,7 @@ function fuzzySearch(query: string, text: string): boolean {
 }
 
 export default function InventoryPage() {
+  const { t } = useLanguage();
   const { formatPrice, currencySymbol } = useCurrency();
   const [products, setProducts] = useState<Product[]>([]);
   const [stats, setStats] = useState<InventoryStat | null>(null);
@@ -56,6 +77,11 @@ export default function InventoryPage() {
   const [selectedProductForMeta, setSelectedProductForMeta] = useState<Product | null>(null);
   const [isPrintLabelsOpen, setIsPrintLabelsOpen] = useState(false);
 
+  const translateOption = (map: Record<string, string>, value: string): string => {
+    const key = map[value];
+    return key ? t(key) : value;
+  };
+
   // Fetch inventory data
   const fetchInventory = async () => {
     setIsLoading(true);
@@ -67,12 +93,12 @@ export default function InventoryPage() {
       if (searchQuery) params.append("search", searchQuery);
 
       const response = await fetch(`/api/inventory?${params.toString()}`);
-      if (!response.ok) throw new Error("Failed to fetch inventory");
+      if (!response.ok) throw new Error(t("inventory.errfetch"));
       
       const data = await response.json();
       setProducts(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error loading inventory");
+      setError(err instanceof Error ? err.message : t("inventory.errload"));
     } finally {
       setIsLoading(false);
     }
@@ -82,7 +108,7 @@ export default function InventoryPage() {
   const fetchStats = async () => {
     try {
       const response = await fetch("/api/inventory/stats");
-      if (!response.ok) throw new Error("Failed to fetch stats");
+      if (!response.ok) throw new Error(t("inventory.errfetchstats"));
       
       const data = await response.json();
       setStats(data);
@@ -130,11 +156,11 @@ export default function InventoryPage() {
         body: JSON.stringify(product),
       });
 
-      if (!response.ok) throw new Error("Failed to add product");
+      if (!response.ok) throw new Error(t("inventory.erradd"));
 
       await Promise.all([fetchInventory(), fetchStats()]);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Error adding product");
+      alert(err instanceof Error ? err.message : t("inventory.erradd"));
       throw err;
     }
   };
@@ -149,28 +175,28 @@ export default function InventoryPage() {
         body: JSON.stringify(product),
       });
 
-      if (!response.ok) throw new Error("Failed to update product");
+      if (!response.ok) throw new Error(t("inventory.errupdate"));
 
       await Promise.all([fetchInventory(), fetchStats()]);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Error updating product");
+      alert(err instanceof Error ? err.message : t("inventory.errupdate"));
       throw err;
     }
   };
 
   const handleDeleteProduct = async (productId: number) => {
-    if (!confirm("Are you sure you want to delete this product?")) return;
+    if (!confirm(t("inventory.confirmdelete"))) return;
 
     try {
       const response = await fetch(`/api/inventory/${productId}`, {
         method: "DELETE",
       });
 
-      if (!response.ok) throw new Error("Failed to delete product");
+      if (!response.ok) throw new Error(t("inventory.errdelete"));
 
       await Promise.all([fetchInventory(), fetchStats()]);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Error deleting product");
+      alert(err instanceof Error ? err.message : t("inventory.errdelete"));
     }
   };
 
@@ -189,12 +215,12 @@ export default function InventoryPage() {
     const trimmedName = newCategoryName.trim();
     
     if (!trimmedName) {
-      alert("Category name cannot be empty");
+      alert(t("inventory.catempty"));
       return;
     }
     
     if (categories.includes(trimmedName)) {
-      alert("This category already exists");
+      alert(t("inventory.catexists"));
       return;
     }
     
@@ -209,14 +235,14 @@ export default function InventoryPage() {
       {/* Top Stats Bar */}
       {stats && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Total Products" value={stats.total_products} icon="📦" />
-          <StatCard label="In Stock" value={stats.in_stock} icon="✓" color="emerald" />
-          <StatCard label="Low Stock" value={stats.low_stock} icon="⚠" color="amber" />
-          <StatCard label="Out of Stock" value={stats.out_of_stock} icon="✕" color="red" />
-          <StatCard label="Expired" value={stats.expired_products} icon="📅" color="red" />
-          <StatCard label="Restock Needed" value={stats.restock} icon="🔄" color="amber" />
-          <StatCard label="Total Value" value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_value)}</>} icon="💰" />
-          <StatCard label="Retail Value" value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_retail_value)}</>} icon="💵" />
+          <StatCard label={t("inventory.totalproducts")} value={stats.total_products} icon="📦" />
+          <StatCard label={t("inventory.instock")} value={stats.in_stock} icon="✓" color="emerald" />
+          <StatCard label={t("inventory.lowstock")} value={stats.low_stock} icon="⚠" color="amber" />
+          <StatCard label={t("inventory.outofstock")} value={stats.out_of_stock} icon="✕" color="red" />
+          <StatCard label={t("inventory.expired")} value={stats.expired_products} icon="📅" color="red" />
+          <StatCard label={t("inventory.restock")} value={stats.restock} icon="🔄" color="amber" />
+          <StatCard label={t("inventory.totalvalue")} value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_value)}</>} icon="💰" />
+          <StatCard label={t("inventory.retailvalue")} value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_retail_value)}</>} icon="💵" />
         </div>
       )}
 
@@ -229,7 +255,7 @@ export default function InventoryPage() {
           </svg>
           <input
             type="text"
-            placeholder="Search by product name or barcode..."
+            placeholder={t("inventory.searchplaceholder")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 pl-10 pr-4 py-2.5 text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:border-indigo-400 dark:focus:border-sky-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-sky-900 outline-none text-slate-900 dark:text-white"
@@ -242,7 +268,7 @@ export default function InventoryPage() {
             {/* Category Filter */}
             <div className="flex-1 sm:flex-auto sm:min-w-[160px]">
               <label htmlFor="category-filter" className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Category
+                {t("inventory.category")}
               </label>
               <div className="flex gap-2">
                 <select
@@ -253,14 +279,14 @@ export default function InventoryPage() {
                 >
                   {categories.map((cat) => (
                     <option key={cat} value={cat}>
-                      {cat}
+                      {translateOption(categoryLabelMap, cat)}
                     </option>
                   ))}
                 </select>
                 <button
                   onClick={() => setIsCategoryModalOpen(true)}
                   className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform"
-                  title="Add new category"
+                  title={t("inventory.addcategory")}
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -272,7 +298,7 @@ export default function InventoryPage() {
             {/* Stock Status Filter */}
             <div className="flex-1 sm:flex-auto sm:min-w-[160px]">
               <label htmlFor="stock-filter" className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
-                Stock Status
+                {t("inventory.stockstatus")}
               </label>
               <select
                 id="stock-filter"
@@ -282,7 +308,7 @@ export default function InventoryPage() {
               >
                 {STOCK_STATUSES.map((status) => (
                   <option key={status} value={status}>
-                    {status}
+                    {translateOption(stockStatusLabelMap, status)}
                   </option>
                 ))}
               </select>
@@ -298,7 +324,7 @@ export default function InventoryPage() {
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Print Labels
+              {t("inventory.printlabels")}
             </button>
 
             <button
@@ -311,7 +337,7 @@ export default function InventoryPage() {
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              Add Product
+              {t("inventory.addproduct")}
             </button>
           </div>
         </div>
@@ -328,7 +354,7 @@ export default function InventoryPage() {
       <div className="rounded-2xl bg-white dark:bg-slate-900 shadow-sm overflow-hidden border border-slate-200 dark:border-slate-700">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="text-slate-500 dark:text-slate-400">Loading inventory...</div>
+            <div className="text-slate-500 dark:text-slate-400">{t("inventory.loading")}</div>
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="flex items-center justify-center py-12">
@@ -336,8 +362,8 @@ export default function InventoryPage() {
               <svg className="h-12 w-12 text-slate-300 dark:text-slate-700 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
-              <p className="text-slate-600 dark:text-slate-300 font-medium">No products found</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Try adjusting your filters or search query</p>
+              <p className="text-slate-600 dark:text-slate-300 font-medium">{t("inventory.empty")}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{t("inventory.emptyhint")}</p>
             </div>
           </div>
         ) : (
@@ -345,14 +371,14 @@ export default function InventoryPage() {
             <table className="w-full">
               <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">SKU/Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Category</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Stock</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Price</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Profit %</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Supplier</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.sku")}</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.category")}</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.stock")}</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.status")}</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.price")}</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.profit")}</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.supplier")}</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -371,16 +397,16 @@ export default function InventoryPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-semibold text-slate-900 dark:text-white">{product.current_stock}</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">Min: {product.min_stock_level}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">{t("inventory.min")} {product.min_stock_level}</div>
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${color}`}>
-                          {status}
+                          {translateOption(stockStatusLabelMap, status)}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-semibold text-slate-900 dark:text-white">{formatPrice(product.selling_price)}</div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">Cost: {formatPrice(product.cost_price)}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">{t("inventory.cost")} {formatPrice(product.cost_price)}</div>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{product.profit_percentage || 0}%</span>
@@ -396,7 +422,7 @@ export default function InventoryPage() {
                               setIsBarcodeModalOpen(true);
                             }}
                             className="rounded px-2 py-1 text-xs font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-800"
-                            title="Print Barcode"
+                            title={t("inventory.barcode")}
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -408,7 +434,7 @@ export default function InventoryPage() {
                               setIsMetaModalOpen(true);
                             }}
                             className="rounded px-2 py-1 text-xs font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-slate-800"
-                            title="Meta Data & Sales"
+                            title={t("inventory.meta")}
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -417,7 +443,7 @@ export default function InventoryPage() {
                           <button
                             onClick={() => openEditModal(product)}
                             className="rounded px-2 py-1 text-xs font-medium text-indigo-600 dark:text-sky-400 hover:bg-indigo-50 dark:hover:bg-slate-800"
-                            title="Edit"
+                            title={t("inventory.edit")}
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -426,7 +452,7 @@ export default function InventoryPage() {
                           <button
                             onClick={() => product.id && handleDeleteProduct(product.id)}
                             className="rounded px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-slate-800"
-                            title="Delete"
+                            title={t("inventory.delete")}
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -484,18 +510,18 @@ export default function InventoryPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setIsCategoryModalOpen(false)} />
           <div className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-6">
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Add New Category</h2>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">{t("inventory.newcategory")}</h2>
             <form onSubmit={handleAddCategory} className="space-y-4">
               <div>
                 <label htmlFor="category-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  Category Name
+                  {t("inventory.catname")}
                 </label>
                 <input
                   id="category-name"
                   type="text"
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder="e.g., Furniture"
+                  placeholder={t("inventory.catplaceholder")}
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-sky-900 outline-none"
                   autoFocus
                 />
@@ -509,13 +535,13 @@ export default function InventoryPage() {
                   }}
                   className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform"
                 >
-                  Cancel
+                  {t("inventory.cancel")}
                 </button>
                 <button
                   type="submit"
                   className="rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform"
                 >
-                  Add Category
+                  {t("inventory.addcategory")}
                 </button>
               </div>
             </form>
@@ -545,4 +571,3 @@ function StatCard({ label, value, icon, color }: { label: string; value: string 
     </div>
   );
 }
-

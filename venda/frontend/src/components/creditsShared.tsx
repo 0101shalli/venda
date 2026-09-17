@@ -1,6 +1,17 @@
 import { useEffect, useRef } from "react";
 import JsBarcode from "jsbarcode";
 import { barcodeFormat } from "../utils/barcode";
+import translations from "../i18n/translations";
+
+export function getLang(): "en" | "fr" {
+  const stored = localStorage.getItem("app_lang");
+  return stored === "fr" ? "fr" : "en";
+}
+
+export function getT(): (key: string) => string {
+  const lang = getLang();
+  return (key: string) => translations[lang]?.[key] ?? translations.en[key] ?? key;
+}
 
 export type StoreCredit = {
   id: number;
@@ -123,6 +134,7 @@ export const CREDIT_STATUS_LABEL: Record<StoreCredit["status"], string> = {
 export async function printCreditCard(credit: StoreCredit, amountText: string): Promise<{ success: boolean; message: string }> {
   try {
     const branding = await fetchStoreBranding();
+    const t = getT();
     const exp = credit.expiry_date || "";
     const win = window.open("", "_blank", "width=420,height=400");
     if (!win) {
@@ -130,8 +142,14 @@ export async function printCreditCard(credit: StoreCredit, amountText: string): 
     }
     const logoHtml = printBrandingHeaderHtml(branding.storeLogo);
     const footerHtml = printBrandingFooterHtml(branding);
-    const status = CREDIT_STATUS_LABEL[credit.status] || credit.status;
-    win.document.write(`<!DOCTYPE html><html><head><title>Store Credit Card</title></head>
+    const statusMap: Record<string, string> = {
+      unclaimed: t("credits.status.unclaimed"),
+      unavailable: t("credits.status.unavailable"),
+      claimed: t("credits.status.claimed"),
+      cancelled: t("credits.status.cancelled"),
+    };
+    const status = statusMap[credit.status] || credit.status;
+    win.document.write(`<!DOCTYPE html><html><head><title>${t("sidebar.sales")}</title></head>
       <body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;">
         <div style="border:2px solid #111;border-radius:16px;padding:20px 24px;max-width:340px;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:8px;">
@@ -139,21 +157,21 @@ export async function printCreditCard(credit: StoreCredit, amountText: string): 
               ${logoHtml}
             </div>
             <div style="text-align:right;">
-              <div style="font-size:16px;font-weight:bold;color:#111;">STORE CREDIT</div>
+              <div style="font-size:16px;font-weight:bold;color:#111;">${t("credits.title")}</div>
               <div style="font-size:9px;color:#555;">${branding.storeName}</div>
             </div>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:flex-end;padding-top:14px;">
             <div style="font-size:11px;color:#333;line-height:1.6;">
-              <div><strong>Client:</strong> ${credit.client_name}</div>
-              <div><strong>Address:</strong> ${credit.client_address || "—"}</div>
-              <div><strong>Product:</strong> ${credit.product_name}</div>
-              <div><strong>Status:</strong> <span style="font-weight:bold;color:${
+              <div><strong>${t("credits.client")}:</strong> ${credit.client_name}</div>
+              <div><strong>${t("credits.address")}:</strong> ${credit.client_address || "—"}</div>
+              <div><strong>${t("credits.product")}:</strong> ${credit.product_name}</div>
+              <div><strong>${t("credits.status")}:</strong> <span style="font-weight:bold;color:${
                 credit.status === "claimed" ? "#059669" : credit.status === "cancelled" ? "#dc2626" : "#0f172a"
               };">${status}</span></div>
             </div>
             <div style="text-align:right;">
-              <div style="font-size:9px;color:#888;">CREDIT VALUE</div>
+              <div style="font-size:9px;color:#888;">${t("credits.value")}</div>
               <div style="font-size:24px;font-weight:bold;color:#111;">${amountText}</div>
             </div>
           </div>
@@ -161,7 +179,7 @@ export async function printCreditCard(credit: StoreCredit, amountText: string): 
             <svg id="credit-barcode"></svg>
             <div style="font-size:10px;font-family:monospace;letter-spacing:2px;">${credit.credit_code}</div>
           </div>
-          <div style="margin-top:10px;font-size:8px;color:#888;text-align:center;">${exp ? `Expires ${exp} · ` : ""}Present this card at the counter to claim your credit before expiry.</div>
+          <div style="margin-top:10px;font-size:8px;color:#888;text-align:center;">${exp ? `${t("credits.expires")} ${exp} · ` : ""}${t("credits.present")}</div>
           ${footerHtml}
         </div>
       </body></html>`);

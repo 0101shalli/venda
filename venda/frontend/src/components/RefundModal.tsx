@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { generateBarcode } from "../utils/barcode";
 import { StoreCredit, CreditBarcode, printCreditCard } from "./creditsShared";
 
@@ -27,6 +28,7 @@ interface Props {
 
 export default function RefundModal({ item, orderId, onClose, onRefunded }: Props) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [quantity, setQuantity] = useState(item.quantity);
   const [clientName, setClientName] = useState("");
   const [clientAge, setClientAge] = useState("");
@@ -44,15 +46,15 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
 
   const handleProcess = async () => {
     if (!clientName.trim()) {
-      setError("Client name is required.");
+      setError(t("refund.clientNameRequired"));
       return;
     }
     if (!Number.isInteger(quantity) || quantity < 1) {
-      setError("Quantity must be at least 1.");
+      setError(t("refund.qtyAtLeast"));
       return;
     }
     if (quantity > item.quantity) {
-      setError(`You can only refund up to ${item.quantity} item(s).`);
+      setError(`${t("refund.maxRefundPrefix")} ${item.quantity} ${t("refund.maxRefundSuffix")}`);
       return;
     }
     setSubmitting(true);
@@ -73,10 +75,10 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Refund failed");
+      if (!res.ok) throw new Error(data.detail || t("refund.failed"));
       setSavedCredit(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Refund failed");
+      setError(err instanceof Error ? err.message : t("refund.failed"));
     } finally {
       setSubmitting(false);
     }
@@ -98,7 +100,7 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
         <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">Store Credit Created</h3>
+            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t("refund.creditCreated")}</h3>
             <button
               type="button"
               onClick={onClose}
@@ -113,14 +115,14 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-5">
             <div className="flex items-start justify-between gap-4">
               <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
-                <div className="text-lg font-bold text-slate-800 dark:text-slate-100">STORE CREDIT</div>
-                <div>Client: <span className="font-medium text-slate-700 dark:text-slate-300">{savedCredit.client_name}</span></div>
-                <div>Address: <span className="font-medium text-slate-700 dark:text-slate-300">{savedCredit.client_address || "—"}</span></div>
-                <div>Product: <span className="font-medium text-slate-700 dark:text-slate-300">{savedCredit.product_name}</span></div>
-                <div>Expiry: <span className="font-medium text-slate-700 dark:text-slate-300">{savedCredit.expiry_date?.split("T")[0] ?? "—"}</span></div>
+                <div className="text-lg font-bold text-slate-800 dark:text-slate-100">{t("credits.title")}</div>
+                <div>{t("credits.client")}: <span className="font-medium text-slate-700 dark:text-slate-300">{savedCredit.client_name}</span></div>
+                <div>{t("credits.address")}: <span className="font-medium text-slate-700 dark:text-slate-300">{savedCredit.client_address || "—"}</span></div>
+                <div>{t("credits.product")}: <span className="font-medium text-slate-700 dark:text-slate-300">{savedCredit.product_name}</span></div>
+                <div>{t("credits.expires")}: <span className="font-medium text-slate-700 dark:text-slate-300">{savedCredit.expiry_date?.split("T")[0] ?? "—"}</span></div>
               </div>
               <div className="text-right">
-                <div className="text-xs text-slate-400 dark:text-slate-500">CREDIT VALUE</div>
+                <div className="text-xs text-slate-400 dark:text-slate-500">{t("credits.value")}</div>
                 <div className="text-2xl font-bold text-slate-800 dark:text-slate-100">{formatPrice(savedCredit.amount)}</div>
               </div>
             </div>
@@ -144,14 +146,14 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
               onClick={handlePrint}
               className="w-full rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-semibold py-3 transition-colors"
             >
-              🖨️ Print Credit Card
+              🖨️ {t("refund.printCreditCard")}
             </button>
             <button
               type="button"
               onClick={handleDone}
               className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
-              Done
+              {t("refund.done")}
             </button>
           </div>
         </div>
@@ -163,7 +165,7 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">Refund Item</h3>
+          <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t("refund.title")}</h3>
           <button
             type="button"
             onClick={onClose}
@@ -181,32 +183,32 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
               <div className="text-sm font-medium text-slate-800 dark:text-slate-100">{item.name}</div>
               <div className="text-xs font-mono text-slate-500 dark:text-slate-400">{item.sku}</div>
             </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">Category: {item.category}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{t("refund.category")}: {item.category}</div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-500 dark:text-slate-400">
-                Unit price <span className="line-through">{formatPrice(item.unit_price)}</span>
+                {t("refund.unitPrice")} <span className="line-through">{formatPrice(item.unit_price)}</span>
                 {discount > 0 && (
                   <span className="ml-2 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-xs px-2 py-0.5 font-semibold">
-                    {discount}% credit
+                    {discount}% {t("refund.credit")}
                   </span>
                 )}
               </span>
               <span className="font-semibold text-slate-800 dark:text-slate-100">{formatPrice(unitCredit)}</span>
             </div>
             <div className="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
-              <span>Quantity sold</span>
+              <span>{t("refund.quantitySold")}</span>
               <span className="font-medium text-slate-700 dark:text-slate-300">{item.quantity}</span>
             </div>
             <div className="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
-              <span>Total price</span>
+              <span>{t("refund.totalPrice")}</span>
               <span className="font-medium text-slate-700 dark:text-slate-300">{formatPrice(item.total_price)}</span>
             </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">Expiry date: {expiryDate}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{t("refund.expiryDate")}: {expiryDate}</div>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-              Quantity to Refund (max {item.quantity})
+              {t("refund.quantityToRefund")} (max {item.quantity})
             </label>
             <input
               type="number"
@@ -220,13 +222,13 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-              Client Name *
+              {t("refund.clientName")} *
             </label>
             <input
               type="text"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
-              placeholder="Full name of client"
+              placeholder={t("refund.clientNamePlaceholder")}
               className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
             />
           </div>
@@ -234,25 +236,25 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-                Age
+                {t("refund.age")}
               </label>
               <input
                 type="text"
                 value={clientAge}
                 onChange={(e) => setClientAge(e.target.value)}
-                placeholder="e.g. 30"
+                placeholder={t("refund.agePlaceholder")}
                 className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
               />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
-                Address
+                {t("refund.address")}
               </label>
               <input
                 type="text"
                 value={clientAddress}
                 onChange={(e) => setClientAddress(e.target.value)}
-                placeholder="Home / Delivery address"
+                placeholder={t("refund.addressPlaceholder")}
                 className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
               />
             </div>
@@ -260,12 +262,12 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
 
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-4 flex items-center justify-between gap-4">
             <div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">Total Credit Value</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{t("refund.totalCreditValue")}</div>
               <div className="text-lg font-bold text-slate-800 dark:text-slate-100">{formatPrice(creditAmount)}</div>
             </div>
             <div className="flex flex-col items-center gap-1">
               <CreditBarcode value={creditCode} />
-              <span className="text-[10px] text-slate-500 dark:text-slate-400">Credit code</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">{t("refund.creditCode")}</span>
             </div>
           </div>
 
@@ -281,7 +283,7 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
               onClick={onClose}
               className="flex-1 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -289,7 +291,7 @@ export default function RefundModal({ item, orderId, onClose, onRefunded }: Prop
               disabled={submitting}
               className="flex-1 rounded-2xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 transition-colors"
             >
-              {submitting ? "Processing..." : "Process Refund"}
+              {submitting ? t("refund.processing") : t("refund.processRefund")}
             </button>
           </div>
         </div>

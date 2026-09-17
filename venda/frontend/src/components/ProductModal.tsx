@@ -3,6 +3,7 @@ import JsBarcode from "jsbarcode";
 import CameraScanner from "./CameraScanner";
 import ScanToast from "./ScanToast";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { useKeyboardScanner } from "../hooks/useKeyboardScanner";
 import { generateBarcode, barcodeFormat } from "../utils/barcode";
 
@@ -83,6 +84,7 @@ const EMPTY_FORM: Product = {
 
 export default function ProductModal({ isOpen, isEditMode, product, onClose, onSave, categories = DEFAULT_CATEGORIES }: ProductModalProps) {
   const { currencySymbol, formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [formData, setFormData] = useState<Product>(EMPTY_FORM);
   const [systemBargainEnabled, setSystemBargainEnabled] = useState(false);
   const [systemRefundEnabled, setSystemRefundEnabled] = useState(false);
@@ -103,7 +105,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     setFormData((prev) => ({ ...prev, barcode: trimmed }));
     setScannerOpen(false);
     setScanFlash(true);
-    setToast({ type: "success", message: "Barcode captured" });
+    setToast({ type: "success", message: t("product.barcodeCaptured") });
     window.setTimeout(() => setScanFlash(false), 2000);
   };
 
@@ -111,7 +113,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     enabled: isOpen,
     captureRef: barcodeInputRef,
     onBarcode: captureBarcode,
-    onNoBarcode: () => setToast({ type: "error", message: "No barcode detected — please scan again." }),
+    onNoBarcode: () => setToast({ type: "error", message: t("product.noBarcode") }),
   });
 
   useEffect(() => {
@@ -166,19 +168,19 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.barcode.trim()) newErrors.barcode = "Barcode is required";
-    if (!formData.name.trim()) newErrors.name = "Product name is required";
-    if (formData.cost_price < 0) newErrors.cost_price = "Cost price must be positive";
-    if (formData.selling_price < 0) newErrors.selling_price = "Selling price must be positive";
+    if (!formData.barcode.trim()) newErrors.barcode = t("product.errBarcodeRequired");
+    if (!formData.name.trim()) newErrors.name = t("product.errNameRequired");
+    if (formData.cost_price < 0) newErrors.cost_price = t("product.errCostPositive");
+    if (formData.selling_price < 0) newErrors.selling_price = t("product.errSellingPositive");
     if (formData.selling_price <= formData.cost_price) {
-      newErrors.selling_price = "Selling price must be greater than cost price";
+      newErrors.selling_price = t("product.errSellingGreater");
     }
     if (
       formData.bargain_enabled &&
       formData.min_selling_price != null &&
       formData.min_selling_price < formData.cost_price
     ) {
-      newErrors.min_selling_price = "Minimum selling price cannot be less than the cost price";
+      newErrors.min_selling_price = t("product.errMinPrice");
     }
 
     setErrors(newErrors);
@@ -282,7 +284,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
         {/* Header */}
         <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-6 py-4">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-            {isEditMode ? "Edit Product" : "Add New Product"}
+            {isEditMode ? t("product.editTitle") : t("product.addTitle")}
           </h2>
           <button
             onClick={onClose}
@@ -299,11 +301,11 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
         <form onSubmit={handleSubmit} className="space-y-6 px-6 py-4">
           {/* Primary Details */}
           <div>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Primary Details</h3>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">{t("product.primaryDetails")}</h3>
             <div className="space-y-4">
               <div>
                 <label htmlFor="barcode" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Barcode
+                  {t("product.barcode")}
                 </label>
                 <div className="mt-1 flex gap-2">
                   <input
@@ -319,7 +321,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                         ? "border-red-500 dark:border-red-600"
                         : "border-slate-300 bg-white focus:border-indigo-500 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 dark:focus:border-sky-400 dark:focus:ring-sky-900"
                     }`}
-                    placeholder="Scan or type barcode"
+                    placeholder={t("product.scanOrTypeBarcode")}
                   />
                   <button
                     type="button"
@@ -329,14 +331,14 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.882V15.118a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
                     </svg>
-                    Scan
+                    {t("product.scan")}
                   </button>
                   {!isEditMode && (
                     <button
                       type="button"
                       onClick={() => setFormData({ ...formData, barcode: generateBarcode() })}
                       className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition-all hover:bg-slate-50 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
-                      title="Generate new barcode"
+                      title={t("product.generateNewBarcode")}
                     >
                       <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -347,10 +349,10 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                 {errors.barcode && <p className="mt-1 text-xs text-red-500 dark:text-red-400">{errors.barcode}</p>}
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   {scanFlash
-                    ? "Barcode scanned successfully from product item."
+                    ? t("product.scannedSuccess")
                     : isEditMode
-                    ? "Product barcode."
-                    : "Scan from the product item, or a system barcode will be used."}
+                    ? t("product.productBarcode")
+                    : t("product.scanHint")}
                 </p>
                 {formData.barcode && (
                   <div className="mt-3 flex justify-center rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -364,12 +366,12 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                 onScan={handleScanBarcode}
                 onClose={() => setScannerOpen(false)}
                 onError={(msg) => setToast({ type: "error", message: msg })}
-                title="Scan Barcode from Product"
+                title={t("product.scanFromProduct")}
               />
 
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Product Name <span className="text-red-500">*</span>
+                  {t("product.productName")} <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="name"
@@ -379,14 +381,14 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                   className={`mt-1 block w-full rounded-lg border ${
                     errors.name ? "border-red-500 dark:border-red-600" : "border-slate-300 dark:border-slate-600"
                   } bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900`}
-                  placeholder="Product name"
+                  placeholder={t("product.productNamePlaceholder")}
                 />
                 {errors.name && <p className="mt-1 text-xs text-red-500 dark:text-red-400">{errors.name}</p>}
               </div>
 
               <div>
                 <label htmlFor="description" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Description
+                  {t("common.description")}
                 </label>
                 <textarea
                   id="description"
@@ -394,13 +396,13 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
                   className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
-                  placeholder="Product description"
+                  placeholder={t("product.descriptionPlaceholder")}
                 />
               </div>
 
               <div>
                 <label htmlFor="category" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Category
+                  {t("product.category")}
                 </label>
                 <select
                   id="category"
@@ -420,11 +422,11 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
           {/* Inventory Rules */}
           <div>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Inventory Rules</h3>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">{t("product.inventoryRules")}</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label htmlFor="current_stock" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Current Stock
+                  {t("product.currentStock")}
                 </label>
                 <input
                   id="current_stock"
@@ -438,7 +440,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
               <div>
                 <label htmlFor="min_stock_level" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Minimum Stock Level
+                  {t("product.minStockLevel")}
                 </label>
                 <input
                   id="min_stock_level"
@@ -452,7 +454,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
               <div>
                 <label htmlFor="reorder_point" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Reorder Point
+                  {t("product.reorderPoint")}
                 </label>
                 <input
                   id="reorder_point"
@@ -468,15 +470,15 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
           {/* Batch Tracking */}
           <div>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Batch Tracking</h3>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">{t("product.batchTracking")}</h3>
             <div className="space-y-4">
               <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Batch Tracking</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{t("product.batchTracking")}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {formData.is_batch_tracked
-                      ? "This product is tracked by batches."
-                      : "Track this product by manufacturing and expiry batches."}
+                      ? t("product.trackedByBatches")
+                      : t("product.trackByBatchesHint")}
                   </p>
                 </div>
                 <button
@@ -488,7 +490,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                       : "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-sky-500 dark:hover:bg-sky-600"
                   }`}
                 >
-                  {formData.is_batch_tracked ? "Disable Batch Tracking" : "Enable Batch Tracking"}
+                  {formData.is_batch_tracked ? t("product.disableBatchTracking") : t("product.enableBatchTracking")}
                 </button>
               </div>
 
@@ -496,7 +498,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
                     <label htmlFor="batch_number" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Batch Number
+                      {t("product.batchNumber")}
                     </label>
                     <div className="mt-1 flex gap-2">
                       <input
@@ -505,13 +507,13 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                         value={formData.batch_number || ""}
                         onChange={(e) => setFormData({ ...formData, batch_number: e.target.value })}
                         className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
-                        placeholder="Auto-generated batch number"
+                        placeholder={t("product.batchNumberPlaceholder")}
                       />
                       <button
                         type="button"
                         onClick={generateBatchNumber}
                         className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform"
-                        title="Generate a new batch number"
+                        title={t("product.generateNewBatchNumber")}
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -519,13 +521,13 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                       </button>
                     </div>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Generated automatically by the system when batch tracking is enabled.
+                      {t("product.batchNumberHint")}
                     </p>
                   </div>
 
                   <div>
                     <label htmlFor="manufacturing_date" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Manufacturing Date
+                      {t("product.manufacturingDate")}
                     </label>
                     <input
                       id="manufacturing_date"
@@ -538,7 +540,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
                   <div>
                     <label htmlFor="expiry_date" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Expiry Date
+                      {t("product.expiryDate")}
                     </label>
                     <input
                       id="expiry_date"
@@ -555,11 +557,11 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
           {/* Financials */}
           <div>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Financials</h3>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">{t("product.financials")}</h3>
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label htmlFor="cost_price" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Cost Price ({currencySymbol}) <span className="text-red-500">*</span>
+                  {t("product.costPrice")} ({currencySymbol}) <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="cost_price"
@@ -577,7 +579,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
               <div>
                 <label htmlFor="profit_percentage" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Profit %
+                  {t("product.profitPct")}
                 </label>
                 <input
                   id="profit_percentage"
@@ -588,12 +590,12 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                   className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
                   min="0"
                 />
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Markup added to cost price</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("product.markupHint")}</p>
               </div>
 
               <div>
                 <label htmlFor="selling_price" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Selling Price ({currencySymbol}) <span className="text-red-500">*</span>
+                  {t("product.sellingPrice")} ({currencySymbol}) <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="selling_price"
@@ -614,15 +616,15 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
           {/* Bargain */}
           {systemBargainEnabled && (
             <div>
-              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Bargain</h3>
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">{t("product.bargain")}</h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
                   <div>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Bargain for this Product</p>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{t("product.enableBargainForProduct")}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {formData.bargain_enabled
-                        ? "Customers can bargain on this product at checkout."
-                        : "Turn on to allow bargaining on this product."}
+                        ? t("product.bargainEnabledHint")
+                        : t("product.bargainDisabledHint")}
                     </p>
                   </div>
                   <button
@@ -634,7 +636,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                         : "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-sky-500 dark:hover:bg-sky-600"
                     }`}
                   >
-                    {formData.bargain_enabled ? "Disable Bargain" : "Enable Bargain"}
+                    {formData.bargain_enabled ? t("product.disableBargain") : t("product.enableBargain")}
                   </button>
                 </div>
 
@@ -642,7 +644,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                   <>
                     <div>
                       <label htmlFor="min_selling_price" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Minimum Selling Price ({currencySymbol})
+                        {t("product.minSellingPrice")} ({currencySymbol})
                       </label>
                       <input
                         id="min_selling_price"
@@ -663,12 +665,12 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                           }
                           const value = parseFloat(sanitized);
                           if (!Number.isFinite(value)) {
-                            setMinPriceError("Please enter a valid number.");
+                            setMinPriceError(t("product.errValidNumber"));
                             return;
                           }
                           if (value < formData.cost_price) {
                             setMinPriceError(
-                              `Minimum price cannot be less than the cost price (${formatPrice(formData.cost_price)}).`
+                              `${t("product.errMinPriceLess")} (${formatPrice(formData.cost_price)}).`
                             );
                             return;
                           }
@@ -694,7 +696,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                             ? "border-red-500 dark:border-red-600 focus:border-red-500 focus:ring-red-500 dark:focus:ring-red-900"
                             : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-indigo-500 dark:focus:ring-sky-900"
                         }`}
-                        placeholder="Lowest price allowed when bargaining"
+                        placeholder={t("product.minPricePlaceholder")}
                       />
                       {(minPriceError || errors.min_selling_price) && (
                         <p className="mt-1 text-xs text-red-500 dark:text-red-400">
@@ -702,12 +704,12 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                         </p>
                       )}
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Must be a number and at least the cost price ({formatPrice(formData.cost_price)}). Target price is the selling price ({formatPrice(formData.selling_price)}).
+                        {t("product.minPriceHint1")} ({formatPrice(formData.cost_price)}). {t("product.minPriceHint2")} ({formatPrice(formData.selling_price)}).
                       </p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Bargain Steps ({currencySymbol})</label>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{t("product.bargainSteps")} ({currencySymbol})</label>
                       <div className="flex flex-wrap gap-2">
                         {BARGIN_STEPS.map((step) => {
                           const selected = (formData.bargain_steps || "")
@@ -736,7 +738,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                         })}
                       </div>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Select the discount amounts offered during manual bargaining.
+                        {t("product.bargainStepsHint")}
                       </p>
                     </div>
                   </>
@@ -748,15 +750,15 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
           {/* Refund / Store Credit */}
           {systemRefundEnabled && (
             <div>
-              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Refund / Store Credit</h3>
+              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">{t("product.refundStoreCredit")}</h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
                   <div>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Refundable</p>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{t("product.refundable")}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       {formData.refundable
-                        ? "Customers can refund this product for store credit."
-                        : "This product cannot be refunded for store credit."}
+                        ? t("product.refundableEnabledHint")
+                        : t("product.refundableDisabledHint")}
                     </p>
                   </div>
                   <button
@@ -768,7 +770,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                         : "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-sky-500 dark:hover:bg-sky-600"
                     }`}
                   >
-                    {formData.refundable ? "Disable Refunds" : "Enable Refunds"}
+                    {formData.refundable ? t("product.disableRefunds") : t("product.enableRefunds")}
                   </button>
                 </div>
 
@@ -776,7 +778,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label htmlFor="credit_discount_percentage" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Credit Discount %
+                        {t("product.creditDiscountPct")}
                       </label>
                       <input
                         id="credit_discount_percentage"
@@ -794,12 +796,12 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                         className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
                       />
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Percentage deducted from the price when issuing credit.
+                        {t("product.creditDiscountHint")}
                       </p>
                     </div>
                     <div>
                       <label htmlFor="credit_duration_days" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Credit Duration (days)
+                        {t("product.creditDuration")}
                       </label>
                       <input
                         id="credit_duration_days"
@@ -815,7 +817,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                         className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
                       />
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        How long the credit is valid before expiring.
+                        {t("product.creditDurationHint")}
                       </p>
                     </div>
                   </div>
@@ -826,15 +828,15 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
           {/* Bulk Price */}
           <div>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Bulk Price</h3>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">{t("product.bulkPrice")}</h3>
             <div className="space-y-4">
               <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
                 <div>
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Bulk Pricing</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{t("product.bulkPricing")}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {formData.bulk_enabled
-                      ? "Bulk price is enabled for this product."
-                      : "This product has no bulk pricing."}
+                      ? t("product.bulkEnabledHint")
+                      : t("product.bulkDisabledHint")}
                   </p>
                 </div>
                 <button
@@ -846,7 +848,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                       : "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-sky-500 dark:hover:bg-sky-600"
                   }`}
                 >
-                  {formData.bulk_enabled ? "Disable Bulk Price" : "Enable Bulk Price"}
+                  {formData.bulk_enabled ? t("product.disableBulkPrice") : t("product.enableBulkPrice")}
                 </button>
               </div>
 
@@ -854,7 +856,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="bulk_quantity" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Bulk Quantity
+                      {t("product.bulkQuantity")}
                     </label>
                     <input
                       id="bulk_quantity"
@@ -870,12 +872,12 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                       className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
                     />
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Quantity at which the bulk price applies (e.g. 10).
+                      {t("product.bulkQuantityHint")}
                     </p>
                   </div>
                   <div>
                     <label htmlFor="bulk_price" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Bulk Price
+                      {t("product.bulkPrice")}
                     </label>
                     <input
                       id="bulk_price"
@@ -892,7 +894,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                       className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
                     />
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Price charged per unit when the quantity is an exact bulk multiple.
+                      {t("product.bulkPriceHint")}
                     </p>
                   </div>
                 </div>
@@ -902,11 +904,11 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
           {/* Logistics */}
           <div>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">Logistics</h3>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">{t("product.logistics")}</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label htmlFor="supplier" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Supplier
+                  {t("product.supplier")}
                 </label>
                 <input
                   id="supplier"
@@ -914,13 +916,13 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                   value={formData.supplier}
                   onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
                   className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
-                  placeholder="Supplier name"
+                  placeholder={t("product.supplierNamePlaceholder")}
                 />
               </div>
 
               <div>
                 <label htmlFor="supplier_email" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Supplier Email
+                  {t("product.supplierEmail")}
                 </label>
                 <input
                   id="supplier_email"
@@ -934,7 +936,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
               <div>
                 <label htmlFor="supplier_phone" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Supplier Phone
+                  {t("product.supplierPhone")}
                 </label>
                 <input
                   id="supplier_phone"
@@ -948,7 +950,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
 
               <div>
                 <label htmlFor="warehouse_location" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                  Warehouse Location
+                  {t("product.warehouseLocation")}
                 </label>
                 <input
                   id="warehouse_location"
@@ -970,14 +972,14 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
               className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform"
               disabled={isSaving}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               className="rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform disabled:opacity-50"
               disabled={isSaving}
             >
-              {isSaving ? "Saving..." : isEditMode ? "Update Product" : "Add Product"}
+              {isSaving ? t("product.saving") : isEditMode ? t("product.updateProduct") : t("product.addProduct")}
             </button>
           </div>
         </form>

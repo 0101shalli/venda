@@ -14,6 +14,7 @@ import {
   listCameras,
   selectBestCamera,
 } from "../utils/device";
+import { useLanguage } from "../context/LanguageContext";
 
 declare module "html5-qrcode/third_party/zxing-js.umd" {
   export const GlobalHistogramBinarizer: new (source: any) => any;
@@ -588,9 +589,10 @@ export default function CameraScanner({
   onScan,
   onClose,
   onError,
-  title = "Scan Barcode",
+  title,
   multiScan = false,
 }: CameraScannerProps) {
+  const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -1236,7 +1238,7 @@ export default function CameraScanner({
     ) {
       slowToastAtRef.current = nowP;
       onErrorRef.current?.(
-        "No barcode read yet — move the product closer, flatten the label, and hold steady."
+        t("scanner.slowHint")
       );
     }
 
@@ -1283,7 +1285,7 @@ export default function CameraScanner({
       if (!frozen) return;
       if (performance.now() - restartAtRef.current < 2500) return;
       restartAtRef.current = performance.now();
-      const msg = "Camera preview is not updating — reconnecting camera...";
+      const msg = t("scanner.reconnecting");
       onErrorRef.current?.(msg);
       window.setTimeout(() => {
         if (!isOpenRef.current) return;
@@ -1302,18 +1304,18 @@ export default function CameraScanner({
       msg.includes("Failed to allocate resources") ||
       msg.includes("allocate resources")
     ) {
-      return "Camera is busy or its resources are unavailable. Close any other app using the camera, then press Retry.";
+      return t("scanner.errBusy");
     }
     if (name === "NotAllowedError" || msg.includes("Permission")) {
-      return "Camera permission denied. Allow camera access in your browser/device settings and try again.";
+      return t("scanner.errPermission");
     }
     if (name === "NotFoundError" || name === "DevicesNotFoundError" || msg.includes("NotFound")) {
-      return "No camera found. Connect a camera or use a USB barcode scanner.";
+      return t("scanner.errNoCamera");
     }
     if (name === "OverconstrainedError" || msg.includes("Overconstrained")) {
-      return "Camera does not meet requirements. Try selecting a different camera.";
+      return t("scanner.errRequirements");
     }
-    return `Camera error: ${msg}`;
+    return `${t("scanner.errGeneric")}: ${msg}`;
   };
 
   const startScanner = async (cameraId?: string) => {
@@ -1410,7 +1412,7 @@ export default function CameraScanner({
     restartAtRef.current = now;
     stopScanning();
     if (!canRestart || !isOpenRef.current) return;
-    const msg = "Camera connection lost. Reconnecting...";
+    const msg = t("scanner.connectionLost");
     setError(msg);
     onErrorRef.current?.(msg);
     window.setTimeout(() => {
@@ -1445,7 +1447,7 @@ export default function CameraScanner({
         const support = await checkCameraSupport();
         if (!alive) return;
         if (!support.supported) {
-          const msg = support.reason || "Camera not available on this device.";
+          const msg = support.reason || t("scanner.notAvailable");
           setError(msg);
           onErrorRef.current?.(msg);
           return;
@@ -1453,7 +1455,7 @@ export default function CameraScanner({
 
         let camList = await listCameras();
         if (camList.length === 0) {
-          const msg = "No cameras found. Connect a camera or use a USB barcode scanner.";
+          const msg = t("scanner.errNoCamera");
           setError(msg);
           onErrorRef.current?.(msg);
           return;
@@ -1467,7 +1469,7 @@ export default function CameraScanner({
         await startScanner(camId);
       } catch (err: any) {
         if (!alive) return;
-        const msg = `Could not access camera: ${err?.message || String(err)}`;
+        const msg = `${t("scanner.accessError")}: ${err?.message || String(err)}`;
         setError(msg);
         onErrorRef.current?.(msg);
       }
@@ -1479,7 +1481,7 @@ export default function CameraScanner({
       alive = false;
       stopEverything();
     };
-  }, [isOpen]);
+  }, [isOpen, t]);
 
   if (!isOpen) return null;
 
@@ -1494,7 +1496,7 @@ export default function CameraScanner({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.882V15.118a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
               </svg>
             </div>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h3>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white">{title ?? t("scanner.scanBarcode")}</h3>
           </div>
           <button
             onClick={() => { stopEverything(); onClose(); }}
@@ -1524,14 +1526,14 @@ export default function CameraScanner({
                 <svg className="mx-auto mb-1 h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
-                Barcode detected!
+                {t("scanner.detected")}
               </div>
             )}
 
             {isStarting && !error && (
               <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-black/70">
                 <div className="mb-2 h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                <p className="text-xs text-white/80">Starting camera...</p>
+                <p className="text-xs text-white/80">{t("scanner.starting")}</p>
               </div>
             )}
           </div>
@@ -1552,7 +1554,7 @@ export default function CameraScanner({
                   }}
                   className="mt-2 rounded-lg bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400"
                 >
-                  Retry
+                  {t("scanner.retry")}
                 </button>
               </div>
             </div>
@@ -1562,7 +1564,7 @@ export default function CameraScanner({
         {cameras.length > 1 && !error && (
           <div className="px-4 pt-2">
             <label className="mb-1 block text-[11px] font-medium text-slate-500 dark:text-slate-400">
-              Camera
+              {t("scanner.camera")}
             </label>
             <select
               value={selectedCameraId}
@@ -1578,14 +1580,14 @@ export default function CameraScanner({
 
         <div className="px-4 pb-4 pt-3">
           <p className="text-center text-[11px] text-slate-400 dark:text-slate-500">
-            Point camera at a barcode — flat, curved, small, or sideways labels all work.
+            {t("scanner.aimHint")}
           </p>
           {multiScan && (
             <button
               onClick={() => { stopEverything(); onClose(); }}
               className="mt-2 w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 dark:bg-sky-500 dark:hover:bg-sky-600"
             >
-              Done
+              {t("scanner.done")}
             </button>
           )}
         </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { getAuth } from "../services/auth";
 
 function DatabaseTile({
@@ -69,6 +70,7 @@ interface ProfileData {
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { formatPrice, refresh: refreshCurrency } = useCurrency();
+  const { lang, setLang, t } = useLanguage();
   const auth = getAuth();
 
   const [loading, setLoading] = useState(true);
@@ -196,9 +198,9 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ receipt_printing: String(newValue) }),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) throw new Error(t("settings.failedtoupdate"));
       setReceiptPrinting(newValue);
-      setSaveMessage({ type: "success", text: "Receipt printing setting updated!" });
+      setSaveMessage({ type: "success", text: t("settings.receiptupdated") });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -216,9 +218,9 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ card_button_disabled: String(newValue) }),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) throw new Error(t("settings.failedtoupdate"));
       setCardDisabled(newValue);
-      setSaveMessage({ type: "success", text: "Card button setting updated!" });
+      setSaveMessage({ type: "success", text: t("settings.cardupdated") });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -236,9 +238,9 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bargain_enabled: String(newValue) }),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) throw new Error(t("settings.failedtoupdate"));
       setBargainEnabled(newValue);
-      setSaveMessage({ type: "success", text: "Bargain feature setting updated!" });
+      setSaveMessage({ type: "success", text: t("settings.bargainupdated") });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -256,9 +258,9 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ system_logs_enabled: String(newValue) }),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) throw new Error(t("settings.failedtoupdate"));
       setSystemLogsEnabled(newValue);
-      setSaveMessage({ type: "success", text: "System logs setting updated!" });
+      setSaveMessage({ type: "success", text: t("settings.syslogsupdated") });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -276,9 +278,9 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refund_feature_enabled: String(newValue) }),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) throw new Error(t("settings.failedtoupdate"));
       setRefundFeatureEnabled(newValue);
-      setSaveMessage({ type: "success", text: "Refund feature setting updated!" });
+      setSaveMessage({ type: "success", text: t("settings.refundupdated") });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -296,9 +298,9 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lending_enabled: String(newValue) }),
       });
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) throw new Error(t("settings.failedtoupdate"));
       setLendingEnabled(newValue);
-      setSaveMessage({ type: "success", text: "Lending feature setting updated!" });
+      setSaveMessage({ type: "success", text: t("settings.lendingupdated") });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -315,8 +317,8 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: defaultProfit }),
       });
-      if (!res.ok) throw new Error("Failed to save default profit");
-      setSaveMessage({ type: "success", text: "Default profit percentage saved!" });
+      if (!res.ok) throw new Error(t("settings.failedtodefaultprofit"));
+      setSaveMessage({ type: "success", text: t("settings.defaultprofitsaved") });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -329,7 +331,7 @@ export default function SettingsPage() {
     setProfitSearchLoading(true);
     try {
       const res = await fetch(`/api/products/search-profit?q=${encodeURIComponent(profitSearchQuery)}`);
-      if (!res.ok) throw new Error("Failed to search products");
+      if (!res.ok) throw new Error(t("settings.failedtofindproducts"));
       const data = await res.json();
       setProfitSearchResults(data);
     } catch (err: any) {
@@ -346,7 +348,7 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profit_percentage: newProfit }),
       });
-      if (!res.ok) throw new Error("Failed to update profit");
+      if (!res.ok) throw new Error(t("settings.failedtoupdateprofit"));
       const updated = await res.json();
       setProfitSearchResults((prev) =>
         prev.map((p) =>
@@ -355,7 +357,7 @@ export default function SettingsPage() {
             : p
         )
       );
-      setProfitMessage({ type: "success", text: `Updated ${updated.name}` });
+      setProfitMessage({ type: "success", text: `${t("settings.updated")} ${updated.name}` });
       setTimeout(() => setProfitMessage(null), 2000);
     } catch (err: any) {
       setProfitMessage({ type: "error", text: err.message });
@@ -370,7 +372,7 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profit_percentage: bulkProfit }),
       });
-      if (!res.ok) throw new Error("Failed to update bulk profit");
+      if (!res.ok) throw new Error(t("settings.failedbulkupdate"));
       const data = await res.json();
       setProfitMessage({ type: "success", text: data.message });
       setTimeout(() => setProfitMessage(null), 3000);
@@ -384,9 +386,9 @@ export default function SettingsPage() {
 
   const handleReset = async (kind: "db" | "products" | "sales") => {
     const confirmMessages: Record<string, string> = {
-      db: "This will permanently delete ALL data (products, sales, users, and sessions) EXCEPT the admin account. This cannot be undone. Continue?",
-      products: "This will permanently delete ALL products, batches, and inventory history. This cannot be undone. Continue?",
-      sales: "This will permanently delete ALL sales records. This cannot be undone. Continue?",
+      db: t("settings.confirmreset.db"),
+      products: t("settings.confirmreset.products"),
+      sales: t("settings.confirmreset.sales"),
     };
     if (!window.confirm(confirmMessages[kind])) return;
     setResetBusy(kind);
@@ -394,8 +396,8 @@ export default function SettingsPage() {
     try {
       const res = await fetch(`/api/admin/reset-${kind}`, { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Reset failed");
-      setResetMessage({ type: "success", text: data.message || "Reset complete." });
+      if (!res.ok) throw new Error(data.detail || t("settings.resetfailed"));
+      setResetMessage({ type: "success", text: data.message || t("settings.resetcomplete") });
       setTimeout(() => setResetMessage(null), 5000);
     } catch (err: any) {
       setResetMessage({ type: "error", text: err.message });
@@ -405,8 +407,10 @@ export default function SettingsPage() {
   };
 
   const handleImport = async (kind: "products" | "sales", file: File) => {
-    const label = kind === "products" ? "products" : "sales";
-    if (!window.confirm(`Importing ${label} data will add new records. Any existing products (by barcode) or sales (by invoice number) will be skipped. Continue?`)) {
+    const label = kind === "products" ? t("settings.products") : t("settings.sales");
+    const confirmMsg =
+      kind === "products" ? t("settings.importconfirm.products") : t("settings.importconfirm.sales");
+    if (!window.confirm(confirmMsg)) {
       return;
     }
     const formData = new FormData();
@@ -414,10 +418,10 @@ export default function SettingsPage() {
     try {
       const res = await fetch(`/api/admin/import-${kind}`, { method: "POST", body: formData });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Import failed");
-      alert(`Imported ${data.created} ${label}, skipped ${data.skipped} existing.`);
+      if (!res.ok) throw new Error(data.detail || t("settings.importfailed"));
+      alert(`${t("settings.imported")} ${data.created} ${label}, ${t("settings.skipped")} ${data.skipped} ${t("settings.existing")}.`);
     } catch (err: any) {
-      alert(`Import failed: ${err.message}`);
+      alert(`${t("settings.importfailed")}: ${err.message}`);
     }
   };
 
@@ -474,9 +478,9 @@ export default function SettingsPage() {
       });
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.detail || "Failed to save profile");
+        throw new Error(errData.detail || t("settings.failedprofile"));
       }
-      setSaveMessage({ type: "success", text: "Profile saved successfully!" });
+      setSaveMessage({ type: "success", text: t("settings.profilesaved") });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -491,20 +495,20 @@ export default function SettingsPage() {
     <div className="space-y-6 pb-12">
       {/* Page Header */}
       <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Settings</h1>
-        <p className="mt-1 text-slate-500 dark:text-slate-400">Manage your profile and application preferences.</p>
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{t("settings.title")}</h1>
+        <p className="mt-1 text-slate-500 dark:text-slate-400">{t("settings.subtitle")}</p>
       </div>
 
       {/* Appearance / Theme Toggle */}
       <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Appearance</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Toggle between light and dark mode</p>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{t("settings.appearance")}</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("settings.appearance.desc")}</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-slate-600 dark:text-slate-300">
-              {theme === "light" ? "☀️ Light" : "🌙 Dark"}
+              {theme === "light" ? "☀️ " + t("settings.light") : "🌙 " + t("settings.dark")}
             </span>
             <button
               onClick={toggleTheme}
@@ -520,19 +524,49 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+
+        {/* Language Toggle */}
+        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.language")}</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.language.desc")}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-sm font-medium ${lang === "en" ? "text-sky-600 dark:text-sky-400" : "text-slate-400 dark:text-slate-500"}`}>
+                {t("common.language.en")}
+              </span>
+              <button
+                onClick={() => setLang(lang === "en" ? "fr" : "en")}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  lang === "fr" ? "bg-sky-500" : "bg-slate-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
+                    lang === "fr" ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+              <span className={`text-sm font-medium ${lang === "fr" ? "text-sky-600 dark:text-sky-400" : "text-slate-400 dark:text-slate-500"}`}>
+                {t("common.language.fr")}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* System Configuration - admin and manager1 only */}
       {canManageSettings && (
         <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">System Configuration</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Configure system-wide settings</p>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">{t("settings.systemconfig")}</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{t("settings.systemconfig.desc")}</p>
 
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Receipt Printing on Cashout</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Automatically print receipt when checkout completes</p>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.receiptprinting")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.receiptprinting.desc")}</p>
               </div>
               <button
                 onClick={handleReceiptPrintingToggle}
@@ -553,8 +587,8 @@ export default function SettingsPage() {
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Disable Card Button on Checkout</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Hide the Card payment button from the sales terminal</p>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.disablecard")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.disablecard.desc")}</p>
               </div>
               <button
                 onClick={handleCardDisabledToggle}
@@ -575,8 +609,8 @@ export default function SettingsPage() {
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Disable Barcode Scanner on Sales Page</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Hide the barcode scanner tile from the sales terminal</p>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.disablescanner")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.disablescanner.desc")}</p>
               </div>
               <button
                 onClick={async () => {
@@ -588,9 +622,9 @@ export default function SettingsPage() {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ barcode_scanner_disabled: String(newValue) }),
                     });
-                    if (!res.ok) throw new Error("Failed to update");
+                    if (!res.ok) throw new Error(t("settings.failedtoupdate"));
                     setBarcodeScannerDisabled(newValue);
-                    setSaveMessage({ type: "success", text: "Barcode scanner setting updated!" });
+                    setSaveMessage({ type: "success", text: t("settings.scannersaved") });
                     setTimeout(() => setSaveMessage(null), 3000);
                   } catch (err: any) {
                     setSaveMessage({ type: "error", text: err.message });
@@ -615,8 +649,8 @@ export default function SettingsPage() {
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Enable Bargain Feature</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Allow automatic and manual bargaining on products at checkout</p>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.bargain")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.bargain.desc")}</p>
               </div>
               <button
                 onClick={handleBargainToggle}
@@ -637,8 +671,8 @@ export default function SettingsPage() {
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Enable Refund / Store Credit Feature</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Allow refunds for store credit and the credit processing flow</p>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.refund")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.refund.desc")}</p>
               </div>
               <button
                 onClick={handleRefundFeatureToggle}
@@ -659,8 +693,8 @@ export default function SettingsPage() {
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Enable Lending Feature</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Allow sales credit and layaway borrow cards for customers</p>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.lending")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.lending.desc")}</p>
               </div>
               <button
                 onClick={handleLendingToggle}
@@ -681,8 +715,8 @@ export default function SettingsPage() {
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">System Logs</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Record login and activity events in the system log</p>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.syslogs")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.syslogs.desc")}</p>
               </div>
               <button
                 onClick={handleSystemLogsToggle}
@@ -702,24 +736,24 @@ export default function SettingsPage() {
 
           {/* Printer Configuration */}
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Receipt Printer Configuration</h3>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">{t("settings.printerconfig")}</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Printer Type</label>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">{t("settings.printertype")}</label>
                 <select
                   value={printerType}
                   onChange={(e) => setPrinterType(e.target.value)}
                   className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                 >
-                  <option value="file">File / Device (USB001, /dev/usb/lp0)</option>
-                  <option value="network">Network (host:port)</option>
-                  <option value="usb">USB (vid:pid)</option>
-                  <option value="serial">Serial (port:baud)</option>
-                  <option value="dummy">Dummy (testing only, no print)</option>
+                  <option value="file">{t("settings.printer.file")}</option>
+                  <option value="network">{t("settings.printer.network")}</option>
+                  <option value="usb">{t("settings.printer.usb")}</option>
+                  <option value="serial">{t("settings.printer.serial")}</option>
+                  <option value="dummy">{t("settings.printer.dummy")}</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Printer Device</label>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">{t("settings.printerdevice")}</label>
                 <input
                   type="text"
                   value={printerDevice}
@@ -736,7 +770,7 @@ export default function SettingsPage() {
                   className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                 />
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Leave empty to use the system default.
+                  {t("settings.printerleaveempty")}
                 </p>
               </div>
               <button
@@ -748,8 +782,8 @@ export default function SettingsPage() {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ printer_type: printerType, printer_device: printerDevice }),
                     });
-                    if (!res.ok) throw new Error("Failed to save printer settings");
-                    setSaveMessage({ type: "success", text: "Printer configuration saved!" });
+                    if (!res.ok) throw new Error(t("settings.failedprinter"));
+                    setSaveMessage({ type: "success", text: t("settings.printersaved") });
                     setTimeout(() => setSaveMessage(null), 3000);
                   } catch (err: any) {
                     setSaveMessage({ type: "error", text: err.message });
@@ -760,52 +794,52 @@ export default function SettingsPage() {
                 disabled={printerSaving}
                 className="rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform disabled:opacity-50"
               >
-                {printerSaving ? "Saving..." : "Save Printer Config"}
+                {printerSaving ? t("settings.saving") : t("settings.saveprinter")}
               </button>
             </div>
           </div>
 
           {/* Store Name & Logo */}
           <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Store Branding</h3>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">{t("settings.storebranding")}</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Store Name</label>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">{t("settings.storename")}</label>
                 <input
                   type="text"
                   value={storeName}
                   onChange={(e) => setStoreName(e.target.value)}
-                  placeholder="General Store"
+                  placeholder={t("settings.defaultstore")}
                   className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                 />
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Leave empty to show "General Store"</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{t("settings.storename.leaveempty")}</p>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Contact Information</label>
-                <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">Shown on receipts, printed cards and exported documents.</p>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">{t("settings.contactinfo")}</label>
+                <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">{t("settings.contactinfo.desc")}</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Contact 1</label>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{t("settings.contact1")}</label>
                     <input
                       type="text"
                       value={storeContact1}
                       onChange={(e) => setStoreContact1(e.target.value)}
-                      placeholder="Phone 1"
+                      placeholder={t("settings.phone1")}
                       className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Contact 2</label>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{t("settings.contact2")}</label>
                     <input
                       type="text"
                       value={storeContact2}
                       onChange={(e) => setStoreContact2(e.target.value)}
-                      placeholder="Phone 2"
+                      placeholder={t("settings.phone2")}
                       className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Email</label>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{t("settings.email")}</label>
                     <input
                       type="text"
                       value={storeEmail}
@@ -815,7 +849,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Website</label>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{t("settings.website")}</label>
                     <input
                       type="text"
                       value={storeWebsite}
@@ -825,7 +859,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Location</label>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{t("settings.location")}</label>
                     <input
                       type="text"
                       value={storeLocation}
@@ -837,18 +871,18 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">Store Logo</label>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1">{t("settings.storelogo")}</label>
                 {storeLogo ? (
                   <div className="mb-3">
                     <div className="inline-flex items-center gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
                       <div className="h-32 w-32 rounded-2xl overflow-hidden flex items-center justify-center bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shrink-0">
-                        <img src={storeLogo} alt="Store logo" className="h-28 w-28 object-contain" />
+                        <img src={storeLogo} alt={t("settings.storelogo")} className="h-28 w-28 object-contain" />
                       </div>
                       <div>
                         <p className="text-lg font-semibold text-slate-700 dark:text-slate-300">
-                          {storeName || "General Store"}
+                          {storeName || t("settings.defaultstore")}
                         </p>
-                        <p className="text-sm text-slate-400 dark:text-slate-500">Store logo preview</p>
+                        <p className="text-sm text-slate-400 dark:text-slate-500">{t("settings.logopreview")}</p>
                       </div>
                     </div>
                   </div>
@@ -859,14 +893,14 @@ export default function SettingsPage() {
                     </div>
                     <div>
                       <p className="text-lg font-semibold text-slate-700 dark:text-slate-300">
-                        {storeName || "General Store"}
+                        {storeName || t("settings.defaultstore")}
                       </p>
-                      <p className="text-sm text-slate-400 dark:text-slate-500">No logo uploaded yet</p>
+                      <p className="text-sm text-slate-400 dark:text-slate-500">{t("settings.nologo")}</p>
                     </div>
                   </div>
                 )}
                 <label className="cursor-pointer inline-block rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform">
-                  {storeLogo ? "Change Logo" : "Upload Logo"}
+                  {storeLogo ? t("settings.changelogo") : t("settings.uploadlogo")}
                   <input
                     type="file"
                     accept="image/*"
@@ -887,7 +921,7 @@ export default function SettingsPage() {
                     onClick={() => setStoreLogo("")}
                     className="ml-2 text-xs font-semibold text-rose-500 hover:underline"
                   >
-                    Remove
+                    {t("settings.remove")}
                   </button>
                 )}
               </div>
@@ -900,8 +934,8 @@ export default function SettingsPage() {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ store_name: storeName, store_logo: storeLogo, store_contact1: storeContact1, store_contact2: storeContact2, store_email: storeEmail, store_website: storeWebsite, store_location: storeLocation }),
                     });
-                    if (!res.ok) throw new Error("Failed to save store settings");
-                    setSaveMessage({ type: "success", text: "Store branding saved!" });
+                    if (!res.ok) throw new Error(t("settings.failedstore"));
+                    setSaveMessage({ type: "success", text: t("settings.saved") });
                     setTimeout(() => setSaveMessage(null), 3000);
                   } catch (err: any) {
                     setSaveMessage({ type: "error", text: err.message });
@@ -912,7 +946,7 @@ export default function SettingsPage() {
                 disabled={storeConfigSaving}
                 className="rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform disabled:opacity-50"
               >
-                {storeConfigSaving ? "Saving..." : "Save Branding"}
+                {storeConfigSaving ? t("settings.saving") : t("settings.savebranding")}
               </button>
             </div>
           </div>
@@ -932,8 +966,8 @@ export default function SettingsPage() {
       {/* Database Management - admin only */}
       {auth?.role === "admin" && (
         <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">Database Management</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Export, import, backup, or reset your store data</p>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">{t("settings.dbmgt")}</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">{t("settings.dbmgt.desc")}</p>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {/* Export Database */}
@@ -944,14 +978,14 @@ export default function SettingsPage() {
                 </svg>
               }
               iconBg="bg-emerald-100 dark:bg-emerald-900/30"
-              title="Export Database"
-              subtitle="Download .db file"
+              title={t("settings.exportdb")}
+              subtitle={t("settings.exportdb.sub")}
             >
               <TileButton
                 onClick={() => window.open("/api/admin/export-db", "_blank")}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
-                Export
+                {t("common.export")}
               </TileButton>
             </DatabaseTile>
 
@@ -963,11 +997,11 @@ export default function SettingsPage() {
                 </svg>
               }
               iconBg="bg-amber-100 dark:bg-amber-900/30"
-              title="Import Database"
-              subtitle="Upload .db file"
+              title={t("settings.importdb")}
+              subtitle={t("settings.importdb.sub")}
             >
               <label className="block w-full rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-2 text-sm font-semibold text-white active:scale-95 transition-all text-center cursor-pointer">
-                Import
+                {t("common.import")}
                 <input
                   type="file"
                   accept=".db"
@@ -975,7 +1009,7 @@ export default function SettingsPage() {
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    if (!confirm("Importing a database will replace the current one. A backup will be created automatically. Continue?")) {
+                    if (!confirm(t("settings.importdb.confirm"))) {
                       e.target.value = "";
                       return;
                     }
@@ -985,11 +1019,11 @@ export default function SettingsPage() {
                       const res = await fetch("/api/admin/import-db", { method: "POST", body: formData });
                       if (!res.ok) {
                         const err = await res.json();
-                        throw new Error(err.detail || "Import failed");
+                        throw new Error(err.detail || t("settings.importfailed"));
                       }
-                      alert("Database imported successfully! Please restart the server.");
+                      alert(t("settings.importdb.success"));
                     } catch (err: any) {
-                      alert("Import failed: " + err.message);
+                      alert(`${t("settings.importfailed")}: ${err.message}`);
                     }
                     e.target.value = "";
                   }}
@@ -1005,14 +1039,14 @@ export default function SettingsPage() {
                 </svg>
               }
               iconBg="bg-blue-100 dark:bg-blue-900/30"
-              title="Backup Database"
-              subtitle="Timestamped backup"
+              title={t("settings.backupdb")}
+              subtitle={t("settings.backupdb.sub")}
             >
               <TileButton
                 onClick={() => window.open("/api/admin/backup-db", "_blank")}
                 className="bg-blue-600 hover:bg-blue-700"
               >
-                Backup
+                {t("settings.backupbtn")}
               </TileButton>
             </DatabaseTile>
 
@@ -1024,14 +1058,14 @@ export default function SettingsPage() {
                 </svg>
               }
               iconBg="bg-teal-100 dark:bg-teal-900/30"
-              title="Product Data Export"
-              subtitle="Download products.json"
+              title={t("settings.exportproducts")}
+              subtitle={t("settings.exportproducts.sub")}
             >
               <TileButton
                 onClick={() => window.open("/api/admin/export-products", "_blank")}
                 className="bg-teal-600 hover:bg-teal-700"
               >
-                Export Products
+                {t("settings.exportproducts.btn")}
               </TileButton>
             </DatabaseTile>
 
@@ -1043,11 +1077,11 @@ export default function SettingsPage() {
                 </svg>
               }
               iconBg="bg-orange-100 dark:bg-orange-900/30"
-              title="Product Data Import"
-              subtitle="Upload products.json"
+              title={t("settings.importproducts")}
+              subtitle={t("settings.importproducts.sub")}
             >
               <label className="block w-full rounded-lg bg-orange-600 hover:bg-orange-700 px-3 py-2 text-sm font-semibold text-white active:scale-95 transition-all text-center cursor-pointer">
-                Import Products
+                {t("settings.importproducts.btn")}
                 <input
                   type="file"
                   accept=".json,application/json"
@@ -1069,14 +1103,14 @@ export default function SettingsPage() {
                 </svg>
               }
               iconBg="bg-violet-100 dark:bg-violet-900/30"
-              title="Sales Data Export"
-              subtitle="Download sales.json"
+              title={t("settings.exportsales")}
+              subtitle={t("settings.exportsales.sub")}
             >
               <TileButton
                 onClick={() => window.open("/api/admin/export-sales", "_blank")}
                 className="bg-violet-600 hover:bg-violet-700"
               >
-                Export Sales
+                {t("settings.exportsales.btn")}
               </TileButton>
             </DatabaseTile>
 
@@ -1088,11 +1122,11 @@ export default function SettingsPage() {
                 </svg>
               }
               iconBg="bg-rose-100 dark:bg-rose-900/30"
-              title="Sales Data Import"
-              subtitle="Upload sales.json"
+              title={t("settings.importsales")}
+              subtitle={t("settings.importsales.sub")}
             >
               <label className="block w-full rounded-lg bg-rose-600 hover:bg-rose-700 px-3 py-2 text-sm font-semibold text-white active:scale-95 transition-all text-center cursor-pointer">
-                Import Sales
+                {t("settings.importsales.btn")}
                 <input
                   type="file"
                   accept=".json,application/json"
@@ -1109,9 +1143,9 @@ export default function SettingsPage() {
 
           {/* Danger Zone */}
           <div className="mt-6 p-4 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/60">
-            <h3 className="text-sm font-semibold text-rose-700 dark:text-rose-400 mb-1">Danger Zone</h3>
+            <h3 className="text-sm font-semibold text-rose-700 dark:text-rose-400 mb-1">{t("settings.dangerzone")}</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              These actions permanently delete data and cannot be undone. Use with caution.
+              {t("settings.dangerzone.desc")}
             </p>
             <div className="flex flex-wrap gap-3">
               <button
@@ -1119,21 +1153,21 @@ export default function SettingsPage() {
                 disabled={resetBusy !== null}
                 className="rounded-lg bg-rose-600 hover:bg-rose-700 px-4 py-2 text-sm font-semibold text-white active:scale-95 transition-all disabled:opacity-50"
               >
-                {resetBusy === "db" ? "Resetting..." : "Database Reset"}
+                {resetBusy === "db" ? t("settings.resetting") : t("settings.resetdb")}
               </button>
               <button
                 onClick={() => handleReset("products")}
                 disabled={resetBusy !== null}
                 className="rounded-lg bg-orange-500 hover:bg-orange-600 px-4 py-2 text-sm font-semibold text-white active:scale-95 transition-all disabled:opacity-50"
               >
-                {resetBusy === "products" ? "Resetting..." : "Product Reset"}
+                {resetBusy === "products" ? t("settings.resetting") : t("settings.resetproducts")}
               </button>
               <button
                 onClick={() => handleReset("sales")}
                 disabled={resetBusy !== null}
                 className="rounded-lg bg-amber-500 hover:bg-amber-600 px-4 py-2 text-sm font-semibold text-white active:scale-95 transition-all disabled:opacity-50"
               >
-                {resetBusy === "sales" ? "Resetting..." : "Sales Reset"}
+                {resetBusy === "sales" ? t("settings.resetting") : t("settings.resetsales")}
               </button>
             </div>
             {resetMessage && (
@@ -1152,17 +1186,17 @@ export default function SettingsPage() {
       {/* Profit Percentage Settings */}
       {canManageSettings && (
         <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">Profit Percentage Markup</h2>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">{t("settings.profitmarkup")}</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
-            Set the profit percentage added to cost price to calculate selling price
+            {t("settings.profitmarkup.desc")}
           </p>
 
           {/* Default Profit Percentage */}
           <div className="mb-6 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Default Profit %</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Applied to new products by default</p>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.defaultprofit")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.defaultprofit.desc")}</p>
               </div>
               <div className="flex items-center gap-3">
                 <input
@@ -1179,7 +1213,7 @@ export default function SettingsPage() {
                   disabled={profitSaving}
                   className="rounded-lg bg-indigo-600 dark:bg-sky-500 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform disabled:opacity-50"
                 >
-                  {profitSaving ? "Saving..." : "Save"}
+                  {profitSaving ? t("settings.saving") : t("common.save")}
                 </button>
               </div>
             </div>
@@ -1189,8 +1223,8 @@ export default function SettingsPage() {
           <div className="mb-6 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Apply to All Products</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Update profit % for every product in inventory</p>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.applyall")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.applyall.desc")}</p>
               </div>
               <div className="flex items-center gap-3">
                 <input
@@ -1207,7 +1241,7 @@ export default function SettingsPage() {
                   disabled={bulkProfitSaving}
                   className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600 active:scale-95 transition-transform disabled:opacity-50"
                 >
-                  {bulkProfitSaving ? "Updating..." : "Update All"}
+                  {bulkProfitSaving ? t("settings.updating") : t("settings.updateall")}
                 </button>
               </div>
             </div>
@@ -1215,7 +1249,7 @@ export default function SettingsPage() {
 
           {/* Search & Individual Profit Edit */}
           <div>
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Search & Edit Individual Products</h3>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">{t("settings.searchedit")}</h3>
             <div className="flex gap-2 mb-4">
               <div className="relative flex-1">
                 <svg className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1223,7 +1257,7 @@ export default function SettingsPage() {
                 </svg>
                 <input
                   type="text"
-                  placeholder="Search by name or barcode..."
+                  placeholder={t("settings.profitsearchph")}
                   value={profitSearchQuery}
                   onChange={(e) => setProfitSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleProfitSearch()}
@@ -1235,7 +1269,7 @@ export default function SettingsPage() {
                 disabled={profitSearchLoading}
                 className="rounded-lg bg-indigo-600 dark:bg-sky-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-transform disabled:opacity-50"
               >
-                {profitSearchLoading ? "Searching..." : "Search"}
+                {profitSearchLoading ? t("settings.searching") : t("common.search")}
               </button>
             </div>
 
@@ -1249,7 +1283,7 @@ export default function SettingsPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900 dark:text-white truncate">{item.name}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Cost: {formatPrice(item.cost_price)} | Selling: {formatPrice(item.selling_price)}
+                        {t("settings.cost")}: {formatPrice(item.cost_price)} | {t("settings.selling")}: {formatPrice(item.selling_price)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
@@ -1274,7 +1308,7 @@ export default function SettingsPage() {
             )}
 
             {profitSearchQuery && profitSearchResults.length === 0 && !profitSearchLoading && (
-              <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">No products found</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">{t("settings.noprofitproducts")}</p>
             )}
           </div>
 
@@ -1292,7 +1326,7 @@ export default function SettingsPage() {
 
       {/* Profile Section */}
       <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-        <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6">My Profile</h2>
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-6">{t("settings.myprofile")}</h2>
 
         {loading ? (
           <div className="flex justify-center py-12">
@@ -1306,7 +1340,7 @@ export default function SettingsPage() {
                 {profile.profile_image ? (
                   <img
                     src={profile.profile_image}
-                    alt="Profile"
+                    alt={t("settings.myprofile")}
                     className="h-24 w-24 rounded-full object-cover border-3 border-slate-200 dark:border-slate-700 shadow-md"
                   />
                 ) : (
@@ -1315,7 +1349,7 @@ export default function SettingsPage() {
                   </div>
                 )}
                 <label className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                  <span className="text-white text-xs font-semibold">Change</span>
+                  <span className="text-white text-xs font-semibold">{t("settings.change")}</span>
                   <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                 </label>
               </div>
@@ -1324,12 +1358,12 @@ export default function SettingsPage() {
                 <p className="text-sm text-slate-500 dark:text-slate-400">@{profile.username} · {profile.role}</p>
                 <div className="flex gap-2 mt-2">
                   <label className="cursor-pointer text-xs font-semibold text-sky-600 dark:text-sky-400 hover:underline">
-                    Upload new photo
+                    {t("settings.uploadnewphoto")}
                     <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                   </label>
                   {profile.profile_image && (
                     <button onClick={handleRemoveImage} className="text-xs font-semibold text-rose-500 hover:underline">
-                      Remove
+                      {t("settings.remove")}
                     </button>
                   )}
                 </div>
@@ -1338,17 +1372,17 @@ export default function SettingsPage() {
 
             <div className="grid gap-5 md:grid-cols-2">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Full Name</label>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">{t("settings.fullname")}</label>
                 <input
                   type="text"
                   value={profile.full_name}
                   onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-                  placeholder="Your full name"
+                  placeholder={t("settings.fullnameph")}
                   className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Email Address</label>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">{t("settings.emailaddress")}</label>
                 <input
                   type="email"
                   value={profile.email}
@@ -1358,11 +1392,11 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">Bio</label>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">{t("settings.bio")}</label>
                 <textarea
                   value={profile.bio}
                   onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-                  placeholder="Tell us about yourself..."
+                  placeholder={t("settings.bioph")}
                   rows={3}
                   className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all resize-none"
                 />
@@ -1370,23 +1404,23 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-3">Social Profiles</h3>
+              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-3">{t("settings.socialprofiles")}</h3>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
                   <span className="text-lg">🐦</span>
-                  <input type="text" value={profile.social_twitter} onChange={(e) => setProfile({ ...profile, social_twitter: e.target.value })} placeholder="Twitter profile URL" className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
+                  <input type="text" value={profile.social_twitter} onChange={(e) => setProfile({ ...profile, social_twitter: e.target.value })} placeholder={t("settings.twitterph")} className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
                 </div>
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
                   <span className="text-lg">📘</span>
-                  <input type="text" value={profile.social_facebook} onChange={(e) => setProfile({ ...profile, social_facebook: e.target.value })} placeholder="Facebook profile URL" className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
+                  <input type="text" value={profile.social_facebook} onChange={(e) => setProfile({ ...profile, social_facebook: e.target.value })} placeholder={t("settings.facebookph")} className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
                 </div>
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
                   <span className="text-lg">🔗</span>
-                  <input type="text" value={profile.social_linkedin} onChange={(e) => setProfile({ ...profile, social_linkedin: e.target.value })} placeholder="LinkedIn profile URL" className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
+                  <input type="text" value={profile.social_linkedin} onChange={(e) => setProfile({ ...profile, social_linkedin: e.target.value })} placeholder={t("settings.linkedinph")} className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
                 </div>
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
                   <span className="text-lg">📷</span>
-                  <input type="text" value={profile.social_instagram} onChange={(e) => setProfile({ ...profile, social_instagram: e.target.value })} placeholder="Instagram profile URL" className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
+                  <input type="text" value={profile.social_instagram} onChange={(e) => setProfile({ ...profile, social_instagram: e.target.value })} placeholder={t("settings.instagramph")} className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none" />
                 </div>
               </div>
             </div>
@@ -1397,7 +1431,7 @@ export default function SettingsPage() {
                 disabled={saving}
                 className="rounded-xl bg-indigo-600 dark:bg-sky-500 px-8 py-3 text-sm font-semibold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-all disabled:opacity-50 shadow-sm"
               >
-                {saving ? "Saving..." : "Save Profile"}
+                {saving ? t("settings.saving") : t("settings.saveprofile")}
               </button>
               {saveMessage && (
                 <p className={`text-sm font-medium ${
@@ -1412,10 +1446,11 @@ export default function SettingsPage() {
       </div>
 
       <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-6">
-        <h3 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Account Information</h3>
+        <h3 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">{t("settings.accountinfo")}</h3>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Your theme preference is automatically saved and will be restored when you return to the application.
-          Profile changes are stored on the server and visible to other administrators.
+          {t("settings.accountinfo.desc1")}
+          {" "}
+          {t("settings.accountinfo.desc2")}
         </p>
       </div>
     </div>

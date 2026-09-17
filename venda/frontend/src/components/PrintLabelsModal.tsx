@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import JsBarcode from "jsbarcode";
 import { Product } from "./ProductModal";
 import { useCurrency } from "../context/CurrencyContext";
+import { useLanguage } from "../context/LanguageContext";
 import { buildLabelsHtml, barcodeToPngDataUrl } from "../utils/labels";
 import { barcodeFormat } from "../utils/barcode";
 import { fetchStoreBranding } from "./creditsShared";
@@ -23,6 +24,7 @@ const simpleFilter = (query: string, product: Product) => {
 
 export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalProps) {
   const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -47,15 +49,15 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
     setError(null);
     try {
       const res = await fetch("/api/inventory");
-      if (!res.ok) throw new Error("Failed to load products");
+      if (!res.ok) throw new Error(t("printlabels.errload"));
       const data = await res.json();
       setProducts(Array.isArray(data) ? data : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load products");
+      setError(err instanceof Error ? err.message : t("printlabels.errload"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const selectFiltered = useCallback(() => {
     const ids = filtered.filter((p) => p.id != null).map((p) => p.id as number);
@@ -97,7 +99,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
 
   const handlePrintPdf = async () => {
     if (selectedCount === 0) {
-      alert("Select at least one product to print labels.");
+      alert(t("printlabels.selectone"));
       return;
     }
     setGeneratingPdf(true);
@@ -164,7 +166,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
       pdf.save("barcode_labels.pdf");
     } catch (err) {
       console.error("PDF generation error:", err);
-      alert("Failed to generate PDF. Please try again.");
+      alert(t("printlabels.pdferror"));
     } finally {
       setGeneratingPdf(false);
     }
@@ -172,7 +174,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
 
   const handlePrint = () => {
     if (selectedCount === 0) {
-      alert("Select at least one product to print labels.");
+      alert(t("printlabels.selectone"));
       return;
     }
     setPrintPreviewOpen(true);
@@ -183,7 +185,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
     const branding = await fetchStoreBranding();
     const win = window.open("", "_blank", "width=800,height=600");
     if (!win) {
-      alert("Could not open the print window. Please allow pop-ups.");
+      alert(t("printlabels.popuperror"));
       return;
     }
     win.document.write(buildLabelsHtml(selected, formatPrice, { storeName: branding.storeName }));
@@ -199,7 +201,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
         <div className="relative w-full max-w-3xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl flex flex-col max-h-[90vh]">
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Print Labels</h2>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">{t("printlabels.title")}</h2>
             <button
               onClick={onClose}
               type="button"
@@ -227,20 +229,20 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name or barcode..."
+                placeholder={t("printlabels.searchplaceholder")}
                 className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-9 pr-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-sky-900 outline-none"
               />
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <div className="rounded-lg bg-indigo-50 dark:bg-sky-900/30 px-3 py-2 text-sm font-semibold text-indigo-700 dark:text-sky-300 whitespace-nowrap">
-                {selectedCount} selected
+                {selectedCount} {t("printlabels.selectedcount")}
               </div>
               <button
                 type="button"
                 onClick={allFilteredSelected ? clearAll : selectFiltered}
                 className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform whitespace-nowrap"
               >
-                {allFilteredSelected ? "Clear All" : "Select All"}
+                {allFilteredSelected ? t("printlabels.clearall") : t("printlabels.selectall")}
               </button>
             </div>
           </div>
@@ -248,12 +250,12 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
           {/* Product list */}
           <div ref={listRef} className="flex-1 overflow-y-auto px-6 py-3">
             {loading ? (
-              <div className="py-12 text-center text-slate-500 dark:text-slate-400">Loading products...</div>
+              <div className="py-12 text-center text-slate-500 dark:text-slate-400">{t("printlabels.loading")}</div>
             ) : error ? (
               <div className="py-6 text-center text-red-600 dark:text-red-400">{error}</div>
             ) : filtered.length === 0 ? (
               <div className="py-12 text-center text-slate-500 dark:text-slate-400">
-                {searchQuery ? "No products match your search." : "No products available."}
+                {searchQuery ? t("printlabels.nomatchsearch") : t("printlabels.noavailable")}
               </div>
             ) : (
               <div className="space-y-1">
@@ -288,7 +290,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
                             : "border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
                         }`}
                       >
-                        {isSelected ? "Selected" : "Select"}
+                        {isSelected ? t("printlabels.selected") : t("printlabels.select")}
                       </button>
                     </div>
                   );
@@ -304,14 +306,14 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
               onClick={onClose}
               className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="button"
               onClick={handlePrint}
               className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2 text-sm font-semibold text-white active:scale-95 transition-transform"
             >
-              Print
+              {t("common.print")}
             </button>
             <button
               type="button"
@@ -319,7 +321,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
               disabled={generatingPdf}
               className="rounded-lg bg-indigo-600 dark:bg-sky-500 hover:bg-indigo-700 dark:hover:bg-sky-600 px-4 py-2 text-sm font-semibold text-white active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {generatingPdf ? "Generating..." : "Print PDF"}
+              {generatingPdf ? t("printlabels.generating") : t("printlabels.printpdf")}
             </button>
           </div>
         </div>
@@ -332,7 +334,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
           <div className="relative w-full max-w-3xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                Preview ({selectedCount} label{selectedCount !== 1 ? "s" : ""})
+                {t("printlabels.preview")} ({selectedCount} {t("printlabels.selectedcount")})
               </h3>
               <button
                 onClick={() => setPrintPreviewOpen(false)}
@@ -373,7 +375,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
                 onClick={() => setPrintPreviewOpen(false)}
                 className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-transform"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="button"
@@ -383,7 +385,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4" />
                 </svg>
-                Print
+                {t("common.print")}
               </button>
             </div>
           </div>

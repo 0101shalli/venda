@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useLanguage } from "../context/LanguageContext";
 
 type ScanToastProps = {
   message: string;
@@ -8,6 +9,7 @@ type ScanToastProps = {
 };
 
 export default function ScanToast({ message, type, onDismiss, duration = 3000 }: ScanToastProps) {
+  const { t } = useLanguage();
   useEffect(() => {
     const t = window.setTimeout(onDismiss, duration);
     return () => window.clearTimeout(t);
@@ -29,7 +31,7 @@ export default function ScanToast({ message, type, onDismiss, duration = 3000 }:
           type="button"
           onClick={onDismiss}
           className="flex-shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-          aria-label="Dismiss"
+          aria-label={t("scantoast.dismiss")}
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
