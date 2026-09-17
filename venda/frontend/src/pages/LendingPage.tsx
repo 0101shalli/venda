@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { jsPDF } from "jspdf";
 import { useCurrency } from "../context/CurrencyContext";
 import { useLanguage } from "../context/LanguageContext";
-import { fetchStoreBranding, printBrandingFooterHtml, printBrandingHeaderHtml } from "../components/creditsShared";
+import { fetchStoreBranding, printBrandingFooterHtml, printBrandingHeaderHtml, type StoreBranding } from "../components/creditsShared";
 
 interface BorrowCardSummary {
   id: number;
@@ -105,6 +106,20 @@ function getStatusLabel(t: (key: string) => string, status: string): string {
     cancelled: t("lending.status.cancelled"),
   };
   return map[status] || status;
+}
+
+function dataUrlImageFormat(dataUrl: string): string {
+  const m = /^data:image\/([a-zA-Z0-9+.-]+);/.exec(dataUrl);
+  return m ? m[1].toLowerCase() : "";
+}
+
+function getImageNaturalSize(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => reject(new Error("Could not load image"));
+    img.src = dataUrl;
+  });
 }
 
 function AccountFormModal({
@@ -905,6 +920,396 @@ function CardDetailModal({ cardId, onClose, onChanged }: { cardId: number; onClo
   );
 }
 
+function VerifyLetterModal({ account, onClose }: { account: LendingAccount; onClose: () => void }) {
+  const { formatPrice } = useCurrency();
+  const { t } = useLanguage();
+  const [fullAccount, setFullAccount] = useState<LendingAccount | null>(null);
+  const [branding, setBranding] = useState<StoreBranding | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetch(`/api/lending/accounts/${account.id}`).then((r) => r.json()),
+      fetchStoreBranding(),
+    ])
+      .then(([acc, br]: [LendingAccount, StoreBranding]) => {
+        if (cancelled) return;
+        setFullAccount(acc);
+        setBranding(br);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [account.id]);
+
+  const unsettled = (fullAccount?.borrow_cards || [])
+    .filter((c: any) => c.status !== "paid" && c.status !== "cancelled")
+    .reduce((sum: number, c: any) => sum + Math.max(0, Number(c.total_amount) - Number(c.amount_paid)), 0);
+
+  const dateStr = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  const openedDate = fullAccount?.created_at ? new Date(fullAccount.created_at).toLocaleDateString() : "—";
+  const storeName = branding?.storeName || "General Store";
+  const contactLine = [branding?.storeLocation, branding?.storeContact1, branding?.storeContact2, branding?.storeEmail, branding?.storeWebsite].filter(Boolean).join(" · ");
+  const phone = branding?.storeContact1 || branding?.storeContact2 || "";
+  const email = branding?.storeEmail || "";
+
+  const letter = fullAccount
+    ? {
+        subject: t("lending.lettersubject").replace("{name}", fullAccount.full_name),
+        certify: t("lending.lettercertify").replace("{name}", fullAccount.full_name).replace("{store}", storeName),
+        standing: t("lending.letterstanding").replace("{amount}", formatPrice(unsettled)),
+        contactDept: t("lending.lettercontactdept").replace("{phone}", phone || "—").replace("{email}", email || "—"),
+      }
+    : null;
+
+  const handleDownloadPdf = async () => {
+    if (!fullAccount || !letter) return;
+    setGenerating(true);
+    try {
+      const b = branding ?? (await fetchStoreBranding());
+      const pdf = new jsPDF({ unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 18;
+      const contentW = pageW - margin * 2;
+      let y = 22;
+
+      const headerContact = [b.storeLocation, b.storeContact1, b.storeContact2, b.storeEmail, b.storeWebsite].filter(Boolean).join("  |  ");
+
+      const addPdfImage = (dataUrl: string, x: number, imgY: number, w: number, h: number) => {
+        const fmt = dataUrlImageFormat(dataUrl);
+        try {
+          pdf.addImage(dataUrl, fmt === "jpeg" || fmt === "jpg" ? "JPEG" : "PNG", x, imgY, w, h);
+        } catch {
+          try {
+            pdf.addImage(dataUrl, "PNG", x, imgY, w, h);
+          } catch {
+            try {
+              pdf.addImage(dataUrl, "JPEG", x, imgY, w, h);
+            } catch {
+              // image could not be embedded; skip
+            }
+          }
+        }
+      };
+
+      if (b.storeLogo) {
+        try {
+          const { width, height } = await getImageNaturalSize(b.storeLogo);
+          if (width > 0 && height > 0) {
+            const maxW = 55;
+            const maxH = 22;
+            const ratio = height / width;
+            let w = maxW;
+            let h = w * ratio;
+            if (h > maxH) {
+              h = maxH;
+              w = h / ratio;
+            }
+            addPdfImage(b.storeLogo, (pageW - w) / 2, y, w, h);
+            y += h + 7;
+          }
+        } catch {
+          // logo could not be embedded; skip
+        }
+      }
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(15);
+      pdf.text(b.storeName || "General Store", pageW / 2, y, { align: "center" });
+      y += 7;
+
+      if (headerContact) {
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(8.5);
+        const contactLines = pdf.splitTextToSize(headerContact, contentW);
+        pdf.text(contactLines, pageW / 2, y, { align: "center" });
+        y += contactLines.length * 3.6 + 2;
+      }
+
+      pdf.setDrawColor(15, 23, 42);
+      pdf.setLineWidth(0.4);
+      pdf.line(margin, y, pageW - margin, y);
+      y += 10;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(11);
+      pdf.text(`${t("lending.letterdate")}: ${dateStr}`, pageW - margin, y, { align: "right" });
+      y += 8;
+
+      pdf.text(t("lending.letterto"), margin, y);
+      y += 7;
+
+      pdf.setFont("helvetica", "bold");
+      pdf.text(letter.subject, margin, y);
+      y += 9;
+
+      pdf.setFont("helvetica", "normal");
+      const certifyLines = pdf.splitTextToSize(letter.certify, contentW);
+      pdf.text(certifyLines, margin, y);
+      y += certifyLines.length * 5.2 + 6;
+
+      const fields: Array<[string, string]> = [
+        [`${t("lending.letteraccountno")}:`, fullAccount.barcode],
+        [`${t("lending.letteropened")}:`, openedDate],
+        [`${t("lending.lettermaxlending")}:`, formatPrice(fullAccount.max_lending_amount || 0)],
+      ];
+      const boxH = fields.length * 7 + 6;
+      pdf.setFillColor(248, 250, 252);
+      pdf.setDrawColor(226, 232, 240);
+      pdf.roundedRect(margin, y, contentW, boxH, 2, 2, "FD");
+      let fy = y + 6;
+      for (const [label, value] of fields) {
+        pdf.setFont("helvetica", "bold");
+        pdf.text(label, margin + 6, fy);
+        const labelW = pdf.getTextWidth(label);
+        pdf.setFont("helvetica", "normal");
+        pdf.text(` ${value}`, margin + 6 + labelW, fy);
+        fy += 7;
+      }
+      y += boxH + 8;
+
+      const standingLines = pdf.splitTextToSize(letter.standing, contentW);
+      pdf.text(standingLines, margin, y);
+      y += standingLines.length * 5.2 + 6;
+
+      const contactDeptLines = pdf.splitTextToSize(letter.contactDept, contentW);
+      pdf.text(contactDeptLines, margin, y);
+      y += contactDeptLines.length * 5.2 + 12;
+
+      pdf.text(t("lending.lettersincerely"), margin, y);
+      y += 20;
+      pdf.setFont("helvetica", "bold");
+      pdf.text("______________________", margin, y);
+      y += 6;
+      pdf.text(b.storeName || "General Store", margin, y);
+      y += 8;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(11);
+      pdf.setTextColor(0, 0, 0);
+
+      const idFront = fullAccount.id_front_image || "";
+      const idBack = fullAccount.id_back_image || "";
+      const idImages: Array<{ dataUrl: string; label: string }> = [];
+      if (idFront) idImages.push({ dataUrl: idFront, label: t("lending.letteridfront") });
+      if (idBack) idImages.push({ dataUrl: idBack, label: t("lending.letteridback") });
+
+      if (idImages.length > 0) {
+        const measured: Array<{ dataUrl: string; label: string; ratio: number }> = [];
+        for (const idImg of idImages) {
+          try {
+            const { width, height } = await getImageNaturalSize(idImg.dataUrl);
+            measured.push({ ...idImg, ratio: width > 0 ? height / width : 1 });
+          } catch {
+            // image could not be loaded; skip
+          }
+        }
+
+        if (measured.length > 0) {
+          const titleH = 8;
+          const capH = 6;
+          const maxImgH = 48;
+          const perColW = (contentW - 6) / Math.min(2, measured.length);
+          const placed = measured.map((m) => {
+            let w = perColW;
+            let h = w * m.ratio;
+            if (h > maxImgH) {
+              h = maxImgH;
+              w = h / m.ratio;
+            }
+            return { ...m, w, h };
+          });
+          const maxH = Math.max(...placed.map((p) => p.h));
+          const sectionH = titleH + maxH + capH + 10;
+
+          if (y + sectionH > pageH - 16) {
+            pdf.addPage();
+            y = 18;
+          }
+
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(11);
+          pdf.setTextColor(0, 0, 0);
+          pdf.text(t("lending.letteridlabel"), margin, y);
+          y += 6;
+
+          const spacing = 6;
+          const totalW = placed.reduce((sum, p) => sum + p.w, 0) + spacing * (placed.length - 1);
+          let ix = margin + (contentW - totalW) / 2;
+          for (const p of placed) {
+            addPdfImage(p.dataUrl, ix, y, p.w, p.h);
+            pdf.setFont("helvetica", "normal");
+            pdf.setFontSize(9);
+            pdf.text(p.label, ix + p.w / 2, y + p.h + 4, { align: "center" });
+            ix += p.w + spacing;
+          }
+          y += maxH + capH + 8;
+        }
+      }
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(t("lending.letterfooter"), pageW / 2, pageH - 14, { align: "center" });
+      if (headerContact) pdf.text(headerContact, pageW / 2, pageH - 9, { align: "center" });
+
+      pdf.save(`borrower_letter_${fullAccount.barcode}.pdf`);
+    } catch (err) {
+      console.error("Letter PDF generation error:", err);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-3xl rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">{t("lending.lettertitle")}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-sky-500"></div>
+          </div>
+        ) : fullAccount && letter ? (
+          <div>
+            {/* Letter preview rendered like a printed document */}
+            <div className="rounded-2xl bg-slate-100 dark:bg-slate-800/60 p-4 mb-5">
+              <div className="mx-auto max-w-[560px] rounded-xl bg-white dark:bg-white px-8 py-9 text-slate-900 shadow-md">
+                <div className="text-center border-b-2 border-slate-900 pb-4">
+                  {branding?.storeLogo ? (
+                    <img src={branding.storeLogo} alt="logo" className="max-h-[44px] max-w-[110px] object-contain block mx-auto mb-2" />
+                  ) : null}
+                  <div className="text-base font-bold text-slate-900">{storeName}</div>
+                  {contactLine ? <div className="mt-1 text-[11px] leading-relaxed text-slate-500">{contactLine}</div> : null}
+                </div>
+                <div className="mt-4 text-right">
+                  <strong className="text-[13px]">{t("lending.letterdate")}: {dateStr}</strong>
+                </div>
+                <h3 className="mt-3 text-[15px] text-slate-900">{t("lending.letterto")}</h3>
+                <p className="mt-1 text-[14px] font-bold text-slate-900">{letter.subject}</p>
+                <p className="mt-2 text-[13px] leading-relaxed">{letter.certify}</p>
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] leading-relaxed">
+                  <p className="m-0"><strong>{t("lending.letteraccountno")}:</strong> {fullAccount.barcode}</p>
+                  <p className="my-1"><strong>{t("lending.letteropened")}:</strong> {openedDate}</p>
+                  <p className="m-0"><strong>{t("lending.lettermaxlending")}:</strong> {formatPrice(fullAccount.max_lending_amount || 0)}</p>
+                </div>
+                <p className="mt-3 text-[13px] leading-relaxed">{letter.standing}</p>
+                <p className="mt-2 text-[13px] leading-relaxed">{letter.contactDept}</p>
+                <p className="mt-6 text-[13px]">{t("lending.lettersincerely")}</p>
+                <p className="mt-16 border-b border-dashed border-slate-400 pb-1 text-[12px] text-slate-400">{storeName}</p>
+                {(fullAccount.id_front_image || fullAccount.id_back_image) && (
+                  <div className="mt-5 border-t border-slate-200 pt-3">
+                    <h4 className="text-[12px] font-bold uppercase tracking-wide text-slate-900">{t("lending.letteridlabel")}</h4>
+                    <div className="mt-2 flex flex-wrap justify-center gap-4">
+                      {fullAccount.id_front_image && (
+                        <figure className="flex flex-col items-center gap-1">
+                          <img src={fullAccount.id_front_image} alt={t("lending.letteridfront")} className="max-h-36 w-auto rounded border border-slate-300 bg-slate-50 object-contain" />
+                          <figcaption className="text-[10px] text-slate-500">{t("lending.letteridfront")}</figcaption>
+                        </figure>
+                      )}
+                      {fullAccount.id_back_image && (
+                        <figure className="flex flex-col items-center gap-1">
+                          <img src={fullAccount.id_back_image} alt={t("lending.letteridback")} className="max-h-36 w-auto rounded border border-slate-300 bg-slate-50 object-contain" />
+                          <figcaption className="text-[10px] text-slate-500">{t("lending.letteridback")}</figcaption>
+                        </figure>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <p className="mt-2 text-center text-[9px] text-slate-400">{t("lending.letterfooter")}</p>
+              </div>
+            </div>
+
+            {/* Cards summary reference */}
+            <h4 className="mb-2 text-sm font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">{t("lending.lettercards")}</h4>
+            {(fullAccount.borrow_cards || []).length > 0 ? (
+              <div className="overflow-x-auto mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-slate-700">
+                      <th className="py-2 px-2 text-left text-xs font-semibold text-slate-500">{t("lending.lettercardcode")}</th>
+                      <th className="py-2 px-2 text-left text-xs font-semibold text-slate-500">{t("lending.lettercardtype")}</th>
+                      <th className="py-2 px-2 text-left text-xs font-semibold text-slate-500">{t("lending.lettercardstatus")}</th>
+                      <th className="py-2 px-2 text-right text-xs font-semibold text-slate-500">{t("lending.lettercardtotal")}</th>
+                      <th className="py-2 px-2 text-right text-xs font-semibold text-slate-500">{t("lending.lettercardpaid")}</th>
+                      <th className="py-2 px-2 text-right text-xs font-semibold text-slate-500">{t("lending.lettercarddue")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(fullAccount.borrow_cards || []).map((c: any) => (
+                      <tr key={c.id} className="border-b border-slate-100 dark:border-slate-800">
+                        <td className="py-2 px-2 font-mono text-xs">{c.card_code}</td>
+                        <td className="py-2 px-2">{c.borrow_type === "layaway" ? t("lending.layaway") : t("lending.salescredit")}</td>
+                        <td className="py-2 px-2">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[c.status]}`}>
+                            {getStatusLabel(t, c.status)}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-right">{formatPrice(c.total_amount)}</td>
+                        <td className="py-2 px-2 text-right">{formatPrice(c.amount_paid)}</td>
+                        <td className="py-2 px-2 text-right font-bold text-rose-600 dark:text-rose-400">
+                          {formatPrice(Math.max(0, Number(c.total_amount) - Number(c.amount_paid)))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center text-slate-400 py-6">{t("lending.nocards")}</div>
+            )}
+
+            <div className="rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 p-4 mb-5 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wider text-rose-500 dark:text-rose-400">{t("lending.letterunsettled")}</p>
+              <p className="mt-1 text-xl font-bold text-rose-600 dark:text-rose-400">{formatPrice(unsettled)}</p>
+              <p className="mt-0.5 text-[11px] text-rose-400 dark:text-rose-500">{t("lending.unsettleddesc")}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={generating}
+              className="w-full rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white py-3 text-sm font-bold transition-colors inline-flex items-center justify-center gap-2"
+            >
+              {generating ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+                  {t("lending.generatingpdf")}
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  {t("lending.printletter")}
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className="text-center text-slate-400 py-8">{t("lending.failedload")}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function LendingPage() {
   const { formatPrice } = useCurrency();
   const { t } = useLanguage();
@@ -917,6 +1322,7 @@ export default function LendingPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingAccount, setEditingAccount] = useState<LendingAccount | null>(null);
   const [viewingCards, setViewingCards] = useState<LendingAccount | null>(null);
+  const [verifyingAccount, setVerifyingAccount] = useState<LendingAccount | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -1037,7 +1443,11 @@ export default function LendingPage() {
           </div>
         ) : (
           <div className="space-y-3">
-{accounts.map((acc) => (
+            {accounts.map((acc) => {
+              const unsettled = (acc.borrow_cards || [])
+                .filter((c) => c.status !== "paid" && c.status !== "cancelled")
+                .reduce((sum, c) => sum + Math.max(0, Number(c.total_amount) - Number(c.amount_paid)), 0);
+              return (
                 <div key={acc.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col md:flex-row md:items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1050,6 +1460,10 @@ export default function LendingPage() {
                       {t("lending.govid")}: <span className="font-mono">{acc.government_id_number || "—"}</span>
                     </p>
                     <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">{t("lending.barcode")}: {acc.barcode}</p>
+                    <p className="mt-1 text-xs font-semibold text-rose-600 dark:text-rose-400">
+                      {t("lending.totalunsettled")}: {formatPrice(unsettled)}
+                      <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">({t("lending.unsettleddesc")})</span>
+                    </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -1061,6 +1475,13 @@ export default function LendingPage() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => setVerifyingAccount(acc)}
+                      className="rounded-xl border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-950/20 px-4 py-2 text-sm font-semibold text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 transition-colors"
+                    >
+                      {t("lending.verifyletter")}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setViewingCards(acc)}
                       className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 text-sm font-semibold transition-colors"
                     >
@@ -1068,9 +1489,10 @@ export default function LendingPage() {
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {showCreate && (
@@ -1081,6 +1503,9 @@ export default function LendingPage() {
       )}
       {viewingCards && (
         <BorrowCardsModal account={viewingCards} onClose={() => setViewingCards(null)} onChanged={() => { loadAccounts(); loadStats(); }} />
+      )}
+      {verifyingAccount && (
+        <VerifyLetterModal account={verifyingAccount} onClose={() => setVerifyingAccount(null)} />
       )}
     </div>
   );
