@@ -12,6 +12,7 @@ type InventoryStat = {
   low_stock: number;
   out_of_stock: number;
   expired_products: number;
+  soon_expired_products: number;
   restock: number;
   total_value: number;
   total_retail_value: number;
@@ -19,7 +20,8 @@ type InventoryStat = {
 };
 
 const CATEGORIES = ["All", "General", "Electronics", "Logistics", "Apparel", "Food & Beverage", "Hardware"];
-const STOCK_STATUSES = ["All", "In Stock", "Low Stock", "Out of Stock", "Expired", "Restock Needed"];
+const STOCK_STATUSES = ["All", "In Stock", "Low Stock", "Out of Stock", "Restock Needed"];
+const PRODUCT_STATES = ["All", "Soon Expired", "Expired"];
 
 const categoryLabelMap: Record<string, string> = {
   "All": "inventory.all",
@@ -36,8 +38,13 @@ const stockStatusLabelMap: Record<string, string> = {
   "In Stock": "inventory.instock",
   "Low Stock": "inventory.lowstock",
   "Out of Stock": "inventory.outofstock",
-  "Expired": "inventory.expired",
   "Restock Needed": "inventory.restock",
+};
+
+const productStateLabelMap: Record<string, string> = {
+  "All": "inventory.all",
+  "Soon Expired": "inventory.soonexpired",
+  "Expired": "inventory.expired",
 };
 
 // Simple fuzzy search algorithm
@@ -64,6 +71,7 @@ export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedStockStatus, setSelectedStockStatus] = useState("All");
+  const [selectedState, setSelectedState] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -90,6 +98,12 @@ export default function InventoryPage() {
       const params = new URLSearchParams();
       if (selectedCategory !== "All") params.append("category", selectedCategory);
       if (selectedStockStatus !== "All") params.append("stock_status", selectedStockStatus);
+      if (selectedState !== "All") {
+        const stateValue =
+          selectedState === "Soon Expired" ? "soon_expired" :
+          selectedState === "Expired" ? "expired" : selectedState;
+        params.append("state", stateValue);
+      }
       if (searchQuery) params.append("search", searchQuery);
 
       const response = await fetch(`/api/inventory?${params.toString()}`);
@@ -131,7 +145,7 @@ export default function InventoryPage() {
     }, 300);
 
     return () => clearTimeout(debounceTimer);
-  }, [searchQuery, selectedCategory, selectedStockStatus]);
+  }, [searchQuery, selectedCategory, selectedStockStatus, selectedState]);
 
   // Fuzzy filter for search
   const filteredProducts = useMemo(() => {
@@ -142,10 +156,22 @@ export default function InventoryPage() {
     );
   }, [products, searchQuery]);
 
-  const getStockStatus = (stock: number) => {
+  const getStockStatus = (product: Product) => {
+    const stock = product.current_stock;
+    if (stock === 0) return { status: "Out of Stock", color: "bg-red-100 text-red-700" };
+    if (stock < product.reorder_point) return { status: "Restock Needed", color: "bg-purple-100 text-purple-700" };
     if (stock > 10) return { status: "In Stock", color: "bg-emerald-100 text-emerald-700" };
-    if (stock > 0) return { status: "Low Stock", color: "bg-amber-100 text-amber-700" };
-    return { status: "Out of Stock", color: "bg-red-100 text-red-700" };
+    return { status: "Low Stock", color: "bg-amber-100 text-amber-700" };
+  };
+
+  const getProductState = (product: Product) => {
+    if (product.state === "expired") {
+      return { state: "Expired", color: "bg-red-100 text-red-700" };
+    }
+    if (product.state === "soon_expired") {
+      return { state: "Soon Expired", color: "bg-orange-100 text-orange-700" };
+    }
+    return null;
   };
 
   const handleAddProduct = async (product: Product) => {
@@ -239,7 +265,18 @@ export default function InventoryPage() {
           <StatCard label={t("inventory.instock")} value={stats.in_stock} icon="✓" color="emerald" />
           <StatCard label={t("inventory.lowstock")} value={stats.low_stock} icon="⚠" color="amber" />
           <StatCard label={t("inventory.outofstock")} value={stats.out_of_stock} icon="✕" color="red" />
-          <StatCard label={t("inventory.expired")} value={stats.expired_products} icon="📅" color="red" />
+          <StatCard
+            label={t("inventory.trackingstate")}
+            value={
+              <>
+                <span className="text-amber-500">{stats.soon_expired_products || 0}</span>{" "}
+                <span className="text-slate-500 dark:text-slate-400">/</span>{" "}
+                <span className="text-rose-500">{stats.expired_products}</span>
+              </>
+            }
+            icon="📅"
+            color="red"
+          />
           <StatCard label={t("inventory.restock")} value={stats.restock} icon="🔄" color="amber" />
           <StatCard label={t("inventory.totalvalue")} value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_value)}</>} icon="💰" />
           <StatCard label={t("inventory.retailvalue")} value={<><span className="text-sm font-semibold text-indigo-500 dark:text-indigo-400">{currencySymbol}</span><br/>{formatPrice(stats.total_retail_value)}</>} icon="💵" />
@@ -313,6 +350,25 @@ export default function InventoryPage() {
                 ))}
               </select>
             </div>
+
+            {/* State Filter */}
+            <div className="flex-1 sm:flex-auto sm:min-w-[160px]">
+              <label htmlFor="state-filter" className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
+                {t("inventory.state")}
+              </label>
+              <select
+                id="state-filter"
+                value={selectedState}
+                onChange={(e) => setSelectedState(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:border-indigo-400 dark:focus:border-sky-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-sky-900 outline-none text-slate-900 dark:text-white"
+              >
+                {PRODUCT_STATES.map((state) => (
+                  <option key={state} value={state}>
+                    {translateOption(productStateLabelMap, state)}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Print Labels + Add Product Buttons */}
@@ -375,6 +431,7 @@ export default function InventoryPage() {
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.category")}</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.stock")}</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.status")}</th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.state")}</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.price")}</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.profit")}</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">{t("inventory.supplier")}</th>
@@ -383,7 +440,8 @@ export default function InventoryPage() {
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {filteredProducts.map((product) => {
-                  const { status, color } = getStockStatus(product.current_stock);
+                  const { status, color } = getStockStatus(product);
+                  const productState = getProductState(product);
                   return (
                     <tr key={product.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                       <td className="px-6 py-4">
@@ -403,6 +461,15 @@ export default function InventoryPage() {
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${color}`}>
                           {translateOption(stockStatusLabelMap, status)}
                         </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {product.is_batch_tracked && productState ? (
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${productState.color}`}>
+                            {translateOption(productStateLabelMap, productState.state)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400 dark:text-slate-500">—</span>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-semibold text-slate-900 dark:text-white">{formatPrice(product.selling_price)}</div>

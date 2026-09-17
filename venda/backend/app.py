@@ -17,7 +17,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from sqlmodel import select, text
+from sqlmodel import delete, select, text
 
 try:
     from .database import create_db_and_tables, get_session, engine
@@ -109,6 +109,27 @@ def log_activity(username: str, user_id: int | None, action: str, details: str =
         pass
 
 
+def _expiry_days(expiry_str: str, today=None) -> int | None:
+    expiry_str = (expiry_str or "").strip()
+    if not expiry_str:
+        return None
+    today = today or datetime.utcnow().date()
+    try:
+        return (datetime.strptime(expiry_str, "%Y-%m-%d").date() - today).days
+    except (ValueError, TypeError):
+        return None
+
+
+def _expiry_state(expiry_str: str, today=None) -> tuple:
+    """Return (is_expired, is_soon_expired, days_to_expiry) for an expiry string."""
+    expiry_str = (expiry_str or "").strip()
+    today = today or datetime.utcnow().date()
+    days = _expiry_days(expiry_str, today)
+    if days is not None:
+        return days < 0, 0 <= days <= 7, days
+    return bool(expiry_str and expiry_str < today.isoformat()), False, None
+
+
 def _product_to_dict(p: Product, session=None) -> dict:
     batch_info = {}
     if session is not None and p.batch_id:
@@ -121,6 +142,18 @@ def _product_to_dict(p: Product, session=None) -> dict:
                 "expiry_date": batch.expiry_date or "",
                 "supplier_id": batch.supplier_id,
             }
+    is_expired, is_soon_expired, days_to_expiry = _expiry_state(batch_info.get("expiry_date"))
+
+    if p.is_batch_tracked:
+        if is_expired:
+            state = "expired"
+        elif is_soon_expired:
+            state = "soon_expired"
+        else:
+            state = None
+    else:
+        state = p.state
+
     return {
         "id": p.id,
         "barcode": p.barcode,
@@ -143,6 +176,10 @@ def _product_to_dict(p: Product, session=None) -> dict:
         "batch_number": batch_info.get("batch_number", ""),
         "manufacturing_date": batch_info.get("manufacturing_date", ""),
         "expiry_date": batch_info.get("expiry_date", ""),
+        "is_expired": is_expired,
+        "is_soon_expired": is_soon_expired,
+        "days_to_expiry": days_to_expiry,
+        "state": state,
         "supplier_id": batch_info.get("supplier_id"),
         "bargain_enabled": p.bargain_enabled,
         "min_selling_price": p.min_selling_price,
@@ -179,11 +216,18 @@ def startup_event() -> None:
             "bulk_quantity": "INTEGER DEFAULT 0",
             "bulk_price": "REAL DEFAULT 0",
             "on_hold": "INTEGER DEFAULT 0",
+            "state": "TEXT",
         }
         for col_name, col_def in new_cols.items():
             if col_name not in existing_cols:
                 conn.execute(text(f"ALTER TABLE product ADD COLUMN {col_name} {col_def}"))
                 conn.commit()
+
+        # Normalize: state only applies to expired / soon_expired batch-tracked products
+        conn.execute(
+            text("UPDATE product SET state = NULL WHERE state = 'instock' OR state IS NULL AND is_batch_tracked = 0")
+        )
+        conn.commit()
 
     # Schema migration: add disabled column to user table
     with engine.connect() as conn:
@@ -929,6 +973,10 @@ def create_sale(request: Request, body: dict):
             if not product:
                 raise HTTPException(status_code=404, detail=f"Product {item['product_id']} not found")
             qty = item["quantity"]
+            if product.is_batch_tracked and product.batch_id:
+                batch = session.get(Batch, product.batch_id)
+                if batch and _expiry_state(batch.expiry_date)[0]:
+                    raise HTTPException(status_code=400, detail=f"{product.name} has expired and cannot be sold")
             available_stock = product.current_stock - (product.on_hold or 0)
             if available_stock < qty:
                 raise HTTPException(status_code=400, detail=f"Insufficient stock for {product.name}")
@@ -1618,6 +1666,18 @@ def lookup_product(barcode: str):
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
 
+        expiry_date = ""
+        if product.is_batch_tracked and product.batch_id:
+            batch = session.get(Batch, product.batch_id)
+            if batch:
+                expiry_date = batch.expiry_date or ""
+        is_expired, is_soon_expired, days_to_expiry = _expiry_state(expiry_date)
+
+        if product.is_batch_tracked:
+            state = "expired" if is_expired else ("soon_expired" if is_soon_expired else None)
+        else:
+            state = product.state
+
         return {
             "id": product.id,
             "barcode": product.barcode,
@@ -1633,6 +1693,11 @@ def lookup_product(barcode: str):
             "bulk_enabled": product.bulk_enabled,
             "bulk_quantity": product.bulk_quantity,
             "bulk_price": product.bulk_price,
+            "expiry_date": expiry_date,
+            "is_expired": is_expired,
+            "is_soon_expired": is_soon_expired,
+            "days_to_expiry": days_to_expiry,
+            "state": state,
         }
 
 
@@ -1646,8 +1711,19 @@ def search_products(q: str = ""):
                 (Product.name.ilike(term)) | (Product.barcode.ilike(term))
             )
         products = session.exec(query.limit(20)).all()
-        return [
-            {
+        result = []
+        for p in products:
+            expiry_date = ""
+            if p.is_batch_tracked and p.batch_id:
+                batch = session.get(Batch, p.batch_id)
+                if batch:
+                    expiry_date = batch.expiry_date or ""
+            is_expired, is_soon_expired, days_to_expiry = _expiry_state(expiry_date)
+            if p.is_batch_tracked:
+                state = "expired" if is_expired else ("soon_expired" if is_soon_expired else None)
+            else:
+                state = p.state
+            result.append({
                 "id": p.id,
                 "barcode": p.barcode,
                 "name": p.name,
@@ -1662,9 +1738,13 @@ def search_products(q: str = ""):
                 "bulk_enabled": p.bulk_enabled,
                 "bulk_quantity": p.bulk_quantity,
                 "bulk_price": p.bulk_price,
-            }
-            for p in products
-        ]
+                "expiry_date": expiry_date,
+                "is_expired": is_expired,
+                "is_soon_expired": is_soon_expired,
+                "days_to_expiry": days_to_expiry,
+                "state": state,
+            })
+        return result
 
 
 @app.get("/api/products/search-profit")
@@ -1858,7 +1938,7 @@ class ProductResponse(BaseModel):
 
 
 @app.get("/api/inventory")
-def get_inventory(category: str = "", stock_status: str = "", search: str = ""):
+def get_inventory(category: str = "", stock_status: str = "", state: str = "", search: str = ""):
     with get_session() as session:
         query = select(Product)
 
@@ -1873,27 +1953,30 @@ def get_inventory(category: str = "", stock_status: str = "", search: str = ""):
 
         products = session.exec(query).all()
 
-        today_str = datetime.utcnow().date().isoformat()
-        filtered_products = []
-        for p in products:
-            if stock_status == "In Stock" and p.current_stock > 10:
-                filtered_products.append(p)
-            elif stock_status == "Low Stock" and 0 < p.current_stock <= 10:
-                filtered_products.append(p)
-            elif stock_status == "Out of Stock" and p.current_stock == 0:
-                filtered_products.append(p)
-            elif stock_status == "Expired":
-                if p.is_batch_tracked and p.batch_id:
-                    batch = session.get(Batch, p.batch_id)
-                    if batch and batch.expiry_date and batch.expiry_date < today_str:
-                        filtered_products.append(p)
-            elif stock_status == "Restock Needed":
-                if p.current_stock < p.reorder_point:
-                    filtered_products.append(p)
-            elif stock_status == "" or stock_status == "All":
-                filtered_products.append(p)
+        product_dicts = [_product_to_dict(p, session) for p in products]
 
-        return [_product_to_dict(p, session) for p in filtered_products]
+        def _matches_stock_status(d: dict) -> bool:
+            if stock_status == "In Stock":
+                return d["current_stock"] > 10
+            if stock_status == "Low Stock":
+                return 0 < d["current_stock"] <= 10
+            if stock_status == "Out of Stock":
+                return d["current_stock"] == 0
+            if stock_status == "Restock Needed":
+                return d["current_stock"] < d["reorder_point"]
+            return stock_status in ("", "All")
+
+        def _matches_state(d: dict) -> bool:
+            if state and state != "All":
+                return d.get("state") == state
+            return True
+
+        filtered_products = [
+            d for d in product_dicts
+            if _matches_stock_status(d) and _matches_state(d)
+        ]
+
+        return filtered_products
 
 
 @app.get("/api/inventory/{product_id}/sales")
@@ -1950,14 +2033,19 @@ def inventory_stats():
 
         today_str = datetime.utcnow().date().isoformat()
         expired_products = 0
+        soon_expired = 0
         restock = 0
         for p in products:
             if p.current_stock < p.reorder_point:
                 restock += 1
             if p.is_batch_tracked and p.batch_id:
                 batch = session.get(Batch, p.batch_id)
-                if batch and batch.expiry_date and batch.expiry_date < today_str:
-                    expired_products += 1
+                if batch and batch.expiry_date:
+                    is_exp, is_soon, _ = _expiry_state(batch.expiry_date)
+                    if is_exp:
+                        expired_products += 1
+                    elif is_soon:
+                        soon_expired += 1
 
         categories = list(set(p.category for p in products))
 
@@ -1967,6 +2055,7 @@ def inventory_stats():
             "low_stock": low_stock,
             "out_of_stock": out_of_stock,
             "expired_products": expired_products,
+            "soon_expired_products": soon_expired,
             "restock": restock,
             "total_value": total_value,
             "total_retail_value": total_retail_value,
@@ -2036,6 +2125,8 @@ def create_product(request: Request, product: ProductCreate):
             session.commit()
             session.refresh(batch)
             new_product.batch_id = batch.id
+            is_expired, is_soon_expired, _ = _expiry_state(batch.expiry_date or "")
+            new_product.state = "expired" if is_expired else ("soon_expired" if is_soon_expired else None)
             session.add(new_product)
             session.commit()
             session.refresh(new_product)
@@ -2106,6 +2197,14 @@ def update_product(request: Request, product_id: int, product_update: ProductUpd
         elif product.batch_id:
             product.batch_id = None
 
+        if product.is_batch_tracked and product.batch_id:
+            batch = session.get(Batch, product.batch_id)
+            if batch and batch.expiry_date:
+                is_expired, is_soon_expired, _ = _expiry_state(batch.expiry_date)
+                product.state = "expired" if is_expired else ("soon_expired" if is_soon_expired else None)
+            else:
+                product.state = None
+
         product.updated_at = datetime.utcnow()
         session.add(product)
         session.commit()
@@ -2122,6 +2221,17 @@ def delete_product(request: Request, product_id: int):
         product = session.exec(select(Product).where(Product.id == product_id)).first()
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
+
+        # Remove dependent records first, otherwise the ORM attempts to
+        # NULL-out NOT NULL FK columns (saleitem, inventorytransaction) and
+        # the delete fails with an IntegrityError. Dependent tables with a
+        # product_id FK must be cleaned up explicitly.
+        session.exec(delete(StoreCredit).where(StoreCredit.product_id == product_id))
+        session.exec(delete(BorrowCardItem).where(BorrowCardItem.product_id == product_id))
+        session.exec(delete(SaleItem).where(SaleItem.product_id == product_id))
+        session.exec(delete(InventoryTransaction).where(InventoryTransaction.product_id == product_id))
+        session.exec(delete(Batch).where(Batch.product_id == product_id))
+        product.batch_id = None
 
         session.delete(product)
         session.commit()
@@ -2496,6 +2606,8 @@ async def import_products(request: Request, file: UploadFile = File(...)):
                 session.add(batch)
                 session.flush()
                 product.batch_id = batch.id
+                is_expired, is_soon_expired, _ = _expiry_state(item.get("expiry_date") or "")
+                product.state = "expired" if is_expired else ("soon_expired" if is_soon_expired else None)
                 session.add(product)
 
         session.commit()
@@ -2951,6 +3063,10 @@ def create_borrow_card(request: Request, data: dict):
             product = session.get(Product, product_id)
             if not product:
                 continue
+            if product.is_batch_tracked and product.batch_id:
+                batch = session.get(Batch, product.batch_id)
+                if batch and _expiry_state(batch.expiry_date)[0]:
+                    raise HTTPException(status_code=400, detail=f"{product.name} has expired and cannot be lent")
             qty = int(item.get("quantity", 1))
             unit_price = float(item.get("unit_price", product.selling_price))
             bci = BorrowCardItem(

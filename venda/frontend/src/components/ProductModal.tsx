@@ -28,6 +28,10 @@ export type Product = {
   batch_number?: string;
   manufacturing_date?: string;
   expiry_date?: string;
+  is_expired?: boolean;
+  is_soon_expired?: boolean;
+  days_to_expiry?: number | null;
+  state?: string | null;
   bargain_enabled?: boolean;
   min_selling_price?: number | null;
   bargain_steps?: string;
@@ -254,6 +258,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
         batch_number: "",
         manufacturing_date: "",
         expiry_date: "",
+        state: null,
       });
     }
   };
@@ -549,6 +554,21 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                       onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
                       className="mt-1 block w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900"
                     />
+                  </div>
+
+                  <div className="col-span-2 flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3">
+                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">{t("product.currentState")}:</span>
+                    {formData.state === "expired" || formData.state === "soon_expired" ? (
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        formData.state === "expired"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-orange-100 text-orange-700"
+                      }`}>
+                        {formData.state === "expired" ? t("product.expired") : t("product.soonExpired")}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{t("product.noExpiryState")}</span>
+                    )}
                   </div>
                 </div>
               )}

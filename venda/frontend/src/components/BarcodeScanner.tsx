@@ -18,6 +18,10 @@ export type ProductInfo = {
   bulk_enabled?: boolean;
   bulk_quantity?: number;
   bulk_price?: number;
+  expiry_date?: string;
+  is_expired?: boolean;
+  is_soon_expired?: boolean;
+  days_to_expiry?: number | null;
 };
 
 type BarcodeScannerProps = {

@@ -600,6 +600,17 @@ function BorrowCardModal({
       );
       return;
     }
+    const expiredItems = items
+      .filter((it) => it.quantity > 0)
+      .map((it) => cart.find((c) => c.id === it.id))
+      .filter((item): item is CartItem => !!item && !!item.is_expired);
+    if (expiredItems.length > 0) {
+      const names = expiredItems.map((i) => i.name).join(", ");
+      setError(
+        `${expiredItems.length > 1 ? t("sales.cannotlendexpireds") : t("sales.cannotlendexpired")}: ${names}. ${t("sales.removefromborrow")}`
+      );
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -965,7 +976,7 @@ export default function SalesTerminal() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string; title?: string } | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<{
     invoice: string;
     lines: ReceiptLine[];
@@ -982,8 +993,8 @@ export default function SalesTerminal() {
   const [storeWebsite, setStoreWebsite] = useState("");
   const [storeLocation, setStoreLocation] = useState("");
 
-  const showToast = (type: "success" | "error", message: string) => {
-    setToast({ type, message });
+  const showToast = (type: "success" | "error", message: string, title?: string) => {
+    setToast({ type, message, title });
     window.setTimeout(() => setToast(null), 5000);
   };
   const [cardDisabled, setCardDisabled] = useState(false);
@@ -1096,6 +1107,17 @@ export default function SalesTerminal() {
   const handleCheckout = async (paymentMethod: "Cash" | "Card") => {
     if (cart.length === 0) return;
 
+    const expiredInCart = cart.filter((i) => i.is_expired);
+    if (expiredInCart.length > 0) {
+      const names = expiredInCart.map((i) => i.name).join(", ");
+      setCheckoutStatus("error");
+      setErrorMessage(
+        `${expiredInCart.length > 1 ? t("sales.cannotsellexpireds") : t("sales.cannotsellexpired")}: ${names}. ${t("sales.removefromcart")}`
+      );
+      showToast("error", `${t("sales.removeexpired")} ${names}`, t("sales.expiredproduct"));
+      return;
+    }
+
     setCheckoutStatus("loading");
     setErrorMessage(null);
     try {
@@ -1192,7 +1214,7 @@ export default function SalesTerminal() {
           <span className="text-2xl">{toast.type === "success" ? "✅" : "❌"}</span>
           <div>
             <p className={`text-sm font-bold ${toast.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-              {toast.type === "success" ? t("sales.receiptprintedtitle") : t("sales.printfailed")}
+              {toast.title || (toast.type === "success" ? t("sales.receiptprintedtitle") : t("sales.printfailed"))}
             </p>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>{toast.message}</p>
           </div>
