@@ -71,6 +71,10 @@ function bulkUnits(item: CartItem): number {
   return 0;
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
 function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
   const { formatPrice } = useCurrency();
   const { t } = useLanguage();
@@ -180,7 +184,7 @@ function BargainModal({
   onClose: () => void;
   onApply: (itemId: number, unitPrice: number, bargainType: "auto" | "manual") => void;
 }) {
-  const { formatPrice } = useCurrency();
+  const { formatPrice, currencySymbol } = useCurrency();
   const { t } = useLanguage();
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [autoPrice, setAutoPrice] = useState(item.selling_price);
@@ -190,10 +194,12 @@ function BargainModal({
 
   const cost = item.cost_price;
   const autoFloor = Math.ceil(cost * 1.15 * 100) / 100;
-  const manualFloor = cost;
   const minSelling = item.min_selling_price ?? null;
   const effectiveAutoFloor = minSelling != null ? Math.max(autoFloor, minSelling) : autoFloor;
-  const effectiveManualFloor = minSelling != null ? Math.max(manualFloor, minSelling) : manualFloor;
+  const manualMin = cost;
+  const manualMax = item.selling_price;
+  const autoMin = Math.min(effectiveAutoFloor, item.selling_price);
+  const autoMax = item.selling_price;
 
   const steps = item.bargain_steps || [];
   const stepSum = selectedSteps.reduce((a, b) => a + b, 0);
@@ -221,10 +227,12 @@ function BargainModal({
         setError(t("sales.cantauto"));
         return;
       }
-      onApply(item.id, autoPrice, "auto");
+      const clamped = clamp(autoPrice, autoMin, autoMax);
+      setAutoPrice(clamped);
+      onApply(item.id, clamped, "auto");
     } else {
-      if (manualPrice < effectiveManualFloor || manualPrice > item.selling_price) {
-        setError(`${t("sales.pricebetween")} ${formatPrice(effectiveManualFloor)} ${t("sales.and")} ${formatPrice(item.selling_price)}.`);
+      if (manualPrice < manualMin || manualPrice > manualMax) {
+        setError(`${t("sales.pricebetween")} ${formatPrice(manualMin)} ${t("sales.and")} ${formatPrice(manualMax)}.`);
         return;
       }
       onApply(item.id, manualPrice, "manual");
@@ -240,15 +248,17 @@ function BargainModal({
           {item.name} · {t("sales.barcode")} {item.barcode}
         </p>
 
-        <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 grid grid-cols-3 gap-3 text-center">
+        <div className={`mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 gap-3 text-center grid ${isManager ? "grid-cols-3" : "grid-cols-2"}`}>
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-400">{t("sales.sellingprice")}</p>
             <p className="mt-1 font-bold text-slate-800 dark:text-white">{formatPrice(item.selling_price)}</p>
           </div>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">{t("sales.costprice")}</p>
-            <p className="mt-1 font-bold text-slate-800 dark:text-white">{formatPrice(item.cost_price)}</p>
-          </div>
+          {isManager && (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400">{t("sales.costprice")}</p>
+              <p className="mt-1 font-bold text-slate-800 dark:text-white">{formatPrice(item.cost_price)}</p>
+            </div>
+          )}
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-400">{t("sales.minselling")}</p>
             <p className="mt-1 font-bold text-slate-800 dark:text-white">
@@ -287,24 +297,39 @@ function BargainModal({
 
         {mode === "auto" ? (
           <div className="mt-5">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{t("sales.bargainedprice")}</p>
-              <p className="text-xl font-black text-indigo-700 dark:text-sky-400">{formatPrice(autoPrice)}</p>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-400 dark:text-slate-500">{currencySymbol}</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={autoMin}
+                  max={autoMax}
+                  value={autoPrice}
+                  disabled={effectiveAutoFloor >= item.selling_price}
+                  onChange={(e) => setAutoPrice(parseFloat(e.target.value) || 0)}
+                  onBlur={() => setAutoPrice(clamp(autoPrice, autoMin, autoMax))}
+                  className="w-32 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-lg font-black text-indigo-700 dark:text-sky-400 text-right focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900 outline-none"
+                />
+              </div>
             </div>
             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              {t("sales.floor")} {formatPrice(effectiveAutoFloor)} ({t("sales.costplus15")}) · {t("sales.reducedby")} {formatPrice(autoReduction)}
+              {isManager
+                ? `${t("sales.floor")} ${formatPrice(effectiveAutoFloor)} (${t("sales.costplus15")}) · ${t("sales.reducedby")} ${formatPrice(autoReduction)}`
+                : `${t("sales.floor")} ${formatPrice(effectiveAutoFloor)} · ${t("sales.reducedby")} ${formatPrice(autoReduction)}`}
             </p>
             <input
               type="range"
-              min={Math.min(effectiveAutoFloor, item.selling_price)}
-              max={item.selling_price}
+              min={autoMin}
+              max={autoMax}
               step={1}
-              value={Math.max(autoPrice, Math.min(effectiveAutoFloor, item.selling_price))}
+              value={clamp(autoPrice, autoMin, autoMax)}
               onChange={(e) => setAutoPrice(parseFloat(e.target.value))}
               disabled={effectiveAutoFloor >= item.selling_price}
               className="mt-4 w-full accent-indigo-600 dark:accent-sky-500"
             />
-            {effectiveAutoFloor >= item.selling_price && (
+{effectiveAutoFloor >= item.selling_price && (
               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
                 {t("sales.autoimpossible")}
               </p>
@@ -312,20 +337,39 @@ function BargainModal({
           </div>
         ) : (
           <div className="mt-5">
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-              {t("sales.sellingforcustomer")}
-            </label>
+            <div className="flex items-center justify-between gap-3">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                {t("sales.sellingforcustomer")}
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-400 dark:text-slate-500">{currencySymbol}</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={manualMin}
+                  max={manualMax}
+                  value={manualPrice}
+                  onChange={(e) => handleManualPriceChange(parseFloat(e.target.value) || 0)}
+                  onBlur={() => setManualPrice(clamp(manualPrice, manualMin, manualMax))}
+                  className="w-32 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-lg font-black text-indigo-700 dark:text-sky-400 text-right focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900 outline-none"
+                />
+              </div>
+            </div>
             <input
-              type="number"
-              step="0.01"
-              min={effectiveManualFloor}
-              max={item.selling_price}
-              value={manualPrice}
-              onChange={(e) => handleManualPriceChange(parseFloat(e.target.value) || 0)}
-              className="mt-1 block w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900 outline-none"
+              type="range"
+              min={manualMin}
+              max={manualMax}
+              step={1}
+              value={clamp(manualPrice, manualMin, manualMax)}
+              onChange={(e) => handleManualPriceChange(parseFloat(e.target.value))}
+              className="mt-3 w-full accent-indigo-600 dark:accent-sky-500"
             />
+            <div className="mt-1 flex justify-between text-xs text-slate-400 dark:text-slate-500">
+              <span>{formatPrice(manualMin)}</span>
+              <span>{formatPrice(manualMax)}</span>
+            </div>
             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-              {t("sales.cannotbelow")} {formatPrice(effectiveManualFloor)} ({t("sales.costprice")}) {t("sales.orabove")} {formatPrice(item.selling_price)}.
+              {t("sales.cannotbelow")} {formatPrice(manualMin)} ({t("sales.costprice")}) {t("sales.orabove")} {formatPrice(manualMax)}.
             </p>
 
             {steps.length > 0 && (
