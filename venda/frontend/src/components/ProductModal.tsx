@@ -43,8 +43,6 @@ export type Product = {
   bulk_price?: number | null;
 };
 
-const BARGIN_STEPS = [100, 500, 1000, 2000, 5000, 10000];
-
 type ProductModalProps = {
   isOpen: boolean;
   isEditMode: boolean;
@@ -96,6 +94,7 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [minPriceError, setMinPriceError] = useState<string | null>(null);
   const [minPriceInput, setMinPriceInput] = useState<string>("");
+  const [bargainStepInput, setBargainStepInput] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanFlash, setScanFlash] = useState(false);
@@ -145,8 +144,10 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
         merged.bargain_steps = (merged.bargain_steps as unknown as number[]).join(",");
       }
       setFormData(merged);
+      setBargainStepInput(merged.bargain_steps || "");
     } else {
       setFormData({ ...EMPTY_FORM, barcode: generateBarcode() });
+      setBargainStepInput("");
     }
     setErrors({});
     setMinPriceError(null);
@@ -186,6 +187,12 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     ) {
       newErrors.min_selling_price = t("product.errMinPrice");
     }
+    if (formData.bargain_enabled) {
+      const stepValue = parseFloat(formData.bargain_steps || "");
+      if (Number.isFinite(stepValue) && stepValue > Math.max(0, formData.selling_price - formData.cost_price)) {
+        newErrors.bargain_steps = t("product.errBargainStepMax");
+      }
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -204,9 +211,19 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     }
   };
 
+  const clampBargainStep = (form: Product) => {
+    const margin = Math.max(0, form.selling_price - form.cost_price);
+    const value = parseFloat(form.bargain_steps || "");
+    if (Number.isNaN(value)) return form;
+    const clamped = Math.min(value, margin);
+    const updated = { ...form };
+    updated.bargain_steps = clamped <= 0 ? "" : String(clamped);
+    return updated;
+  };
+
   const handleCostPriceChange = (value: number) => {
     const newCost = value;
-    const newFormData = { ...formData, cost_price: newCost };
+    let newFormData = { ...formData, cost_price: newCost };
     if (newFormData.profit_percentage > 0) {
       newFormData.selling_price = parseFloat((newCost * (1 + newFormData.profit_percentage / 100)).toFixed(2));
     }
@@ -215,15 +232,19 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
       setMinPriceInput(String(newCost));
       setMinPriceError(null);
     }
+    newFormData = clampBargainStep(newFormData);
+    setBargainStepInput(newFormData.bargain_steps || "");
     setFormData(newFormData);
   };
 
   const handleProfitPercentageChange = (value: number) => {
     const newProfit = value;
-    const newFormData = { ...formData, profit_percentage: newProfit };
+    let newFormData = { ...formData, profit_percentage: newProfit };
     if (newFormData.cost_price > 0) {
       newFormData.selling_price = parseFloat((newFormData.cost_price * (1 + newProfit / 100)).toFixed(2));
     }
+    newFormData = clampBargainStep(newFormData);
+    setBargainStepInput(newFormData.bargain_steps || "");
     setFormData(newFormData);
   };
 
@@ -263,18 +284,25 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
     }
   };
 
-  const toggleBargainStep = (step: number) => {
-    const steps = (formData.bargain_steps || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s !== "");
-    const index = steps.indexOf(String(step));
-    if (index >= 0) {
-      steps.splice(index, 1);
-    } else {
-      steps.push(String(step));
+  const handleBargainStepChange = (raw: string) => {
+    const clean = raw.replace(/[^0-9.]/g, "");
+    const dotIndex = clean.indexOf(".");
+    const sanitized = dotIndex >= 0
+      ? clean.slice(0, dotIndex + 1) + clean.slice(dotIndex + 1).replace(/\./g, "")
+      : clean;
+    setBargainStepInput(sanitized);
+    if (sanitized === "") {
+      setFormData({ ...formData, bargain_steps: "" });
+      return;
     }
-    setFormData({ ...formData, bargain_steps: steps.join(",") });
+    const value = parseFloat(sanitized);
+    if (!Number.isFinite(value)) return;
+    const margin = Math.max(0, formData.selling_price - formData.cost_price);
+    const clamped = Math.min(value, margin);
+    setFormData({ ...formData, bargain_steps: String(clamped) });
+    if (clamped !== value) {
+      setBargainStepInput(String(clamped));
+    }
   };
 
   if (!isOpen) return null;
@@ -622,7 +650,11 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                   type="number"
                   step="0.01"
                   value={formData.selling_price}
-                  onChange={(e) => setFormData({ ...formData, selling_price: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const updated = clampBargainStep({ ...formData, selling_price: parseFloat(e.target.value) || 0 });
+                    setBargainStepInput(updated.bargain_steps || "");
+                    setFormData(updated);
+                  }}
                   className={`mt-1 block w-full rounded-lg border ${
                     errors.selling_price ? "border-red-500 dark:border-red-600" : "border-slate-300 dark:border-slate-600"
                   } bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-1 focus:ring-indigo-500 dark:focus:ring-sky-900`}
@@ -729,36 +761,25 @@ export default function ProductModal({ isOpen, isEditMode, product, onClose, onS
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{t("product.bargainSteps")} ({currencySymbol})</label>
-                      <div className="flex flex-wrap gap-2">
-                        {BARGIN_STEPS.map((step) => {
-                          const selected = (formData.bargain_steps || "")
-                            .split(",")
-                            .map((s) => s.trim())
-                            .filter(Boolean)
-                            .includes(String(step));
-                          return (
-                            <label
-                              key={step}
-                              className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
-                                selected
-                                  ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-sky-500 dark:bg-sky-900/30 dark:text-sky-400"
-                                  : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selected}
-                                onChange={() => toggleBargainStep(step)}
-                                className="sr-only"
-                              />
-                              {formatPrice(step)}
-                            </label>
-                          );
-                        })}
-                      </div>
+                      <label htmlFor="bargain_steps" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{t("product.bargainSteps")} ({currencySymbol})</label>
+                      <input
+                        id="bargain_steps"
+                        type="text"
+                        inputMode="decimal"
+                        value={bargainStepInput}
+                        onChange={(e) => handleBargainStepChange(e.target.value)}
+                        className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:ring-1 outline-none ${
+                          errors.bargain_steps
+                            ? "border-red-500 dark:border-red-600 focus:border-red-500 focus:ring-red-500 dark:focus:ring-red-900"
+                            : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                        }`}
+                        placeholder={t("product.bargainStepPlaceholder")}
+                      />
+                      {errors.bargain_steps && (
+                        <p className="mt-1 text-xs text-red-500 dark:text-red-400">{errors.bargain_steps}</p>
+                      )}
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {t("product.bargainStepsHint")}
+                        {t("product.bargainStepsHint")} ({t("product.bargainMaxHint")} {formatPrice(Math.max(0, formData.selling_price - formData.cost_price))}).
                       </p>
                     </div>
                   </>
