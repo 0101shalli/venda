@@ -383,6 +383,7 @@ def startup_event() -> None:
             "system_logs_enabled": "true",
             "refund_feature_enabled": "false",
             "lending_enabled": "false",
+            "cash_tendering_enabled": "false",
         }
         for key, value in defaults.items():
             existing = session.exec(select(SystemSetting).where(SystemSetting.key == key)).first()
@@ -600,6 +601,7 @@ def get_settings():
         system_logs_enabled = _get_setting(session, "system_logs_enabled") or "true"
         refund_feature_enabled = _get_setting(session, "refund_feature_enabled") or "false"
         lending_enabled = _get_setting(session, "lending_enabled") or "false"
+        cash_tendering_enabled = _get_setting(session, "cash_tendering_enabled") or "false"
     return {
         "currency": currency,
         "receipt_printing": receipt_printing,
@@ -618,6 +620,7 @@ def get_settings():
         "system_logs_enabled": system_logs_enabled,
         "refund_feature_enabled": refund_feature_enabled,
         "lending_enabled": lending_enabled,
+        "cash_tendering_enabled": cash_tendering_enabled,
     }
 
 
@@ -658,6 +661,8 @@ def update_settings(request: Request, body: dict):
             _set_setting(session, "refund_feature_enabled", str(body["refund_feature_enabled"]))
         if "lending_enabled" in body:
             _set_setting(session, "lending_enabled", str(body["lending_enabled"]))
+        if "cash_tendering_enabled" in body:
+            _set_setting(session, "cash_tendering_enabled", str(body["cash_tendering_enabled"]))
         session.commit()
         actor, actor_id = _request_actor(request, session)
         log_activity(actor, actor_id, "UPDATE_SETTINGS", "Updated system settings: " + ", ".join(body.keys()))

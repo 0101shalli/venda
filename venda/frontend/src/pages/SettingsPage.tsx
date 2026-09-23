@@ -105,6 +105,8 @@ export default function SettingsPage() {
 
   const [lendingEnabled, setLendingEnabled] = useState(false);
 
+  const [cashTenderingEnabled, setCashTenderingEnabled] = useState(false);
+
   const [printerType, setPrinterType] = useState("file");
   const [printerDevice, setPrinterDevice] = useState("");
   const [printerSaving, setPrinterSaving] = useState(false);
@@ -168,6 +170,7 @@ export default function SettingsPage() {
         setSystemLogsEnabled(data.system_logs_enabled === "true");
         setRefundFeatureEnabled(data.refund_feature_enabled === "true");
         setLendingEnabled(data.lending_enabled === "true");
+        setCashTenderingEnabled(data.cash_tendering_enabled === "true");
         setPrinterType(data.printer_type || "file");
         setPrinterDevice(data.printer_device || "");
         setStoreName(data.store_name || "");
@@ -301,6 +304,26 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error(t("settings.failedtoupdate"));
       setLendingEnabled(newValue);
       setSaveMessage({ type: "success", text: t("settings.lendingupdated") });
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (err: any) {
+      setSaveMessage({ type: "error", text: err.message });
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const handleCashTenderingToggle = async () => {
+    setConfigSaving(true);
+    const newValue = !cashTenderingEnabled;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cash_tendering_enabled: String(newValue) }),
+      });
+      if (!res.ok) throw new Error(t("settings.failedtoupdate"));
+      setCashTenderingEnabled(newValue);
+      setSaveMessage({ type: "success", text: t("settings.cashtenderingupdated") });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (err: any) {
       setSaveMessage({ type: "error", text: err.message });
@@ -706,6 +729,28 @@ export default function SettingsPage() {
                 <span
                   className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
                     lendingEnabled ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 mt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t("settings.cashtendering")}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("settings.cashtendering.desc")}</p>
+              </div>
+              <button
+                onClick={handleCashTenderingToggle}
+                disabled={configSaving}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                  cashTenderingEnabled ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform ${
+                    cashTenderingEnabled ? "translate-x-7" : "translate-x-1"
                   }`}
                 />
               </button>

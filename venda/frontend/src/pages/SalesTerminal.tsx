@@ -1015,7 +1015,7 @@ function BorrowCardModal({
 }
 
 export default function SalesTerminal() {
-  const { formatPrice } = useCurrency();
+  const { formatPrice, currencySymbol } = useCurrency();
   const { t } = useLanguage();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [checkoutStatus, setCheckoutStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -1028,6 +1028,8 @@ export default function SalesTerminal() {
     payment: string;
     date: string;
     cashierName: string;
+    cashGiven?: number;
+    change?: number;
   } | null>(null);
   const [storeName, setStoreName] = useState("GENERAL STORE");
   const [storeLogo, setStoreLogo] = useState("");
@@ -1047,6 +1049,9 @@ export default function SalesTerminal() {
   const [bargainItem, setBargainItem] = useState<CartItem | null>(null);
   const [hasManager1, setHasManager1] = useState<boolean | null>(null);
   const [lendingEnabled, setLendingEnabled] = useState(false);
+  const [cashTenderingEnabled, setCashTenderingEnabled] = useState(false);
+  const [cashGiven, setCashGiven] = useState<string>("");
+  const [cashError, setCashError] = useState<string | null>(null);
   const [showLendModal, setShowLendModal] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
@@ -1064,6 +1069,7 @@ export default function SalesTerminal() {
         setBarcodeScannerDisabled(settings.barcode_scanner_disabled === "true");
         setBargainEnabled(settings.bargain_enabled === "true");
         setLendingEnabled(settings.lending_enabled === "true");
+        setCashTenderingEnabled(settings.cash_tendering_enabled === "true");
         if (settings.store_name && settings.store_name.trim()) setStoreName(settings.store_name.trim());
         if (settings.store_logo) setStoreLogo(settings.store_logo);
         if (settings.store_contact1) setStoreContact1(settings.store_contact1);
@@ -1146,6 +1152,8 @@ export default function SalesTerminal() {
     setCart([]);
     setCheckoutStatus("idle");
     setErrorMessage(null);
+    setCashGiven("");
+    setCashError(null);
   };
 
   const handleCheckout = async (paymentMethod: "Cash" | "Card") => {
@@ -1166,6 +1174,23 @@ export default function SalesTerminal() {
     setErrorMessage(null);
     try {
       const auth = getAuth();
+      if (paymentMethod === "Cash" && cashTenderingEnabled) {
+        const cashAmount = parseFloat(cashGiven);
+        if (cashGiven.trim() === "" || !Number.isFinite(cashAmount) || cashAmount <= 0) {
+          setCheckoutStatus("error");
+          setErrorMessage(t("sales.cashrequired"));
+          setCashError(t("sales.cashrequired"));
+          return;
+        }
+        if (cashAmount < total) {
+          const msg = `${t("sales.cashinsufficient")} (${formatPrice(total)}).`;
+          setCheckoutStatus("error");
+          setErrorMessage(msg);
+          setCashError(msg);
+          return;
+        }
+        setCashError(null);
+      }
       const response = await fetch("/api/sales", {
         method: "POST",
         headers: {
@@ -1192,18 +1217,25 @@ export default function SalesTerminal() {
       const data = await response.json();
       setCheckoutStatus("success");
       const cartSnapshot = receiptLinesFor(cart);
+      const saleTotal = data.total_amount ?? cartSnapshot.reduce((s, l) => s + l.totalPrice, 0);
+      const tendered = paymentMethod === "Cash" && cashTenderingEnabled ? parseFloat(cashGiven) : undefined;
       setCart([]);
+      setCashGiven("");
+      setCashError(null);
+      setReceiptPreview({
+        invoice: data.invoice_number,
+        lines: cartSnapshot,
+        total: saleTotal,
+        payment: paymentMethod,
+        date: new Date().toLocaleString(),
+        cashierName: auth?.username || "",
+        ...(tendered != null
+          ? { cashGiven: tendered, change: Math.max(0, tendered - saleTotal) }
+          : {}),
+      });
 
       if (data.receipt_printed === true) {
         showToast("success", `${t("sales.receiptprinted")} (${data.invoice_number})`);
-        setReceiptPreview({
-          invoice: data.invoice_number,
-          lines: cartSnapshot,
-          total: data.total_amount ?? cartSnapshot.reduce((s, l) => s + l.totalPrice, 0),
-          payment: paymentMethod,
-          date: new Date().toLocaleString(),
-          cashierName: auth?.username || "",
-        });
       } else if (data.receipt_printed === false) {
         showToast("error", `${t("sales.receiptnotprinted")}: ${data.receipt_error || t("sales.printernotavailable")}`);
       }
@@ -1217,6 +1249,8 @@ export default function SalesTerminal() {
 
   const total = cart.reduce((sum, i) => sum + cartSubtotal(i), 0);
   const itemCount = cart.reduce((sum, i) => sum + i.quantity, 0);
+  const cashGivenAmount = parseFloat(cashGiven) || 0;
+  const cashBalance = cashTenderingEnabled && cashGiven.trim() !== "" ? cashGivenAmount - total : 0;
 
   if (loadingConfig) {
     return (
@@ -1324,6 +1358,18 @@ export default function SalesTerminal() {
                 <span>{t("sales.total")}</span>
                 <span>{formatPrice(receiptPreview.total)}</span>
               </div>
+              {receiptPreview.payment === "Cash" && receiptPreview.cashGiven != null && (
+                <div className="mt-1 border-t border-dashed border-slate-300 dark:border-slate-600 pt-1">
+                  <div className="flex justify-between">
+                    <span>{t("sales.cashgiven")}</span>
+                    <span>{formatPrice(receiptPreview.cashGiven)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>{t("sales.balance")}</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">{formatPrice(receiptPreview.change ?? 0)}</span>
+                  </div>
+                </div>
+              )}
               <div className="my-2 text-center">{"=".repeat(34)}</div>
               <div className="text-center font-bold">{t("sales.thankyou")}</div>
             </div>
@@ -1429,6 +1475,52 @@ export default function SalesTerminal() {
                   <span className="text-indigo-700 dark:text-sky-400">{formatPrice(total)}</span>
                 </div>
               </div>
+
+              {cashTenderingEnabled && (
+                <div className="mt-4">
+                  <label htmlFor="cash-given" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                    {t("sales.cashgiven")} ({currencySymbol})
+                  </label>
+                  <div className="mt-1 flex items-center gap-3">
+                    <input
+                      id="cash-given"
+                      type="text"
+                      inputMode="decimal"
+                      value={cashGiven}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9.]/g, "");
+                        const dotIndex = raw.indexOf(".");
+                        const sanitized = dotIndex >= 0
+                          ? raw.slice(0, dotIndex + 1) + raw.slice(dotIndex + 1).replace(/\./g, "")
+                          : raw;
+                        setCashGiven(sanitized);
+                        setCashError(null);
+                      }}
+                      placeholder={t("sales.cashgivenplaceholder")}
+                      className={`flex-1 rounded-xl border px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:ring-1 outline-none ${
+                        cashError
+                          ? "border-red-500 dark:border-red-600 focus:border-red-500 focus:ring-red-500 dark:focus:ring-red-900"
+                          : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-indigo-500 dark:focus:ring-sky-900"
+                      }`}
+                    />
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span className="text-sm text-slate-500 dark:text-slate-400">{t("sales.balance")}:</span>
+                      <span
+                        className={`text-lg font-bold ${
+                          cashGiven.trim() === ""
+                            ? "text-slate-400"
+                            : cashBalance < 0
+                            ? "text-rose-600 dark:text-rose-400"
+                            : "text-emerald-600 dark:text-emerald-400"
+                        }`}
+                      >
+                        {formatPrice(cashBalance)}
+                      </span>
+                    </div>
+                  </div>
+                  {cashError && <p className="mt-1 text-xs text-red-500 dark:text-red-400">{cashError}</p>}
+                </div>
+              )}
 
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <button
