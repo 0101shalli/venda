@@ -3,6 +3,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { useLanguage } from "../context/LanguageContext";
 import { getAuth } from "../services/auth";
+import MobilePaymentSettings from "../components/MobilePaymentSettings";
 
 function DatabaseTile({
   icon,
@@ -1007,6 +1008,9 @@ export default function SettingsPage() {
           )}
         </div>
       )}
+
+      {/* Mobile Payment Configurations - admin only */}
+      {auth?.role === "admin" && <MobilePaymentSettings />}
 
       {/* Database Management - admin only */}
       {auth?.role === "admin" && (
