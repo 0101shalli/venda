@@ -39,7 +39,7 @@ export default function Sidebar({ role, username, onLogout }: SidebarProps) {
 
   return (
     <aside
-      className="w-72 border-r p-6 transition-colors flex flex-col"
+      className="w-72 h-screen shrink-0 overflow-y-auto border-r p-6 transition-colors flex flex-col"
       style={{
         backgroundColor: "var(--color-sidebar)",
         borderColor: "var(--color-border)",

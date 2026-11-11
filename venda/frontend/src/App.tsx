@@ -73,7 +73,7 @@ function App() {
   return (
     <LanguageProvider>
     <CurrencyProvider>
-    <div className={`min-h-screen flex ${theme === "dark" ? "dark" : ""}`}>
+    <div className={`h-screen flex overflow-hidden ${theme === "dark" ? "dark" : ""}`}>
       <style>{`
         :root {
           --color-primary: ${theme === "dark" ? "#38BDF8" : "#0F172A"};
@@ -91,7 +91,7 @@ function App() {
         }
       `}</style>
       <Sidebar role={auth.role} username={auth.username} onLogout={handleLogout} />
-      <main className="flex-1 p-6" style={{ backgroundColor: "var(--color-bg)", color: "var(--color-text)" }}>
+      <main className="flex-1 h-screen overflow-y-auto p-6" style={{ backgroundColor: "var(--color-bg)", color: "var(--color-text)" }}>
         {forcePasswordChange && <ChangePasswordModal onComplete={() => setForcePasswordChange(false)} />}
         <Routes>
           <Route path="/sales" element={allowedRoutes.includes("/sales") ? <SalesTerminal /> : <Navigate to="/sales" />} />
