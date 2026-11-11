@@ -51,7 +51,6 @@ export default function UserManagementPage() {
   const [newPassword, setNewPassword] = useState("");
   const [resettingUser, setResettingUser] = useState<User | null>(null);
   const [saving, setSaving] = useState(false);
-  const [disableAll, setDisableAll] = useState(false);
 
   const fetchUsers = () => {
     setLoading(true);
@@ -75,6 +74,8 @@ export default function UserManagementPage() {
   }, []);
 
   const visibleUsers = isAdmin ? users : users.filter((u) => u.role !== "admin");
+  const nonAdminUsers = users.filter((u) => u.role !== "admin");
+  const allNonAdminsDisabled = nonAdminUsers.length > 0 && nonAdminUsers.every((u) => u.disabled);
 
   const openAddModal = () => {
     setEditingUser(null);
@@ -209,15 +210,15 @@ export default function UserManagementPage() {
     }
   };
 
-  const handleDisableAll = async () => {
-    if (!confirm(disableAll ? t("users.confirmEnableAll") : t("users.confirmDisableAll"))) return;
+  const handleToggleAll = async () => {
+    const enabling = allNonAdminsDisabled;
+    if (!confirm(enabling ? t("users.confirmEnableAll") : t("users.confirmDisableAll"))) return;
     try {
-      const nonAdminUsers = users.filter((u) => u.role !== "admin");
       for (const u of nonAdminUsers) {
         await fetch(`/api/users/${u.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ disabled: !disableAll }),
+          body: JSON.stringify({ disabled: !enabling }),
         });
       }
       fetchUsers();
@@ -287,14 +288,14 @@ export default function UserManagementPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={handleDisableAll}
+            onClick={handleToggleAll}
             className={`rounded-xl px-4 py-2.5 text-sm font-semibold active:scale-95 transition-transform shadow-sm ${
-              disableAll
+              allNonAdminsDisabled
                 ? "bg-emerald-600 text-white hover:bg-emerald-700"
                 : "bg-rose-600 text-white hover:bg-rose-700"
             }`}
           >
-            {disableAll ? t("users.enableAll") : t("users.disableAll")}
+            {allNonAdminsDisabled ? t("users.enableAll") : t("users.disableAll")}
           </button>
           <button
             onClick={openAddModal}
@@ -399,14 +400,14 @@ export default function UserManagementPage() {
                 {user.username !== "admin" && (
                   <button
                     onClick={() => handleToggleDisable(user)}
-                    className={`px-3 py-2 text-xs font-semibold rounded-xl active:scale-95 transition-all ${
+                    className={`px-3 py-2 text-xs font-semibold rounded-xl active:scale-95 transition-all whitespace-nowrap ${
                       user.disabled
                         ? "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40"
                         : "text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 dark:hover:bg-rose-950/40"
                     }`}
                     title={user.disabled ? t("users.enableUser") : t("users.disableUser")}
                   >
-                    {user.disabled ? "✓" : "⊘"}
+                    {user.disabled ? `✓ ${t("users.reactivate")}` : "⊘"}
                   </button>
                 )}
                 {isAdmin && (
@@ -498,11 +499,11 @@ export default function UserManagementPage() {
                       onChange={(e) => setCurrencyOnCreate(e.target.value)}
                       className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none"
                     >
-                      <option value="XAF">XAF - Central African Franc</option>
-                      <option value="$">$ - US Dollar</option>
-                      <option value="€">€ - Euro</option>
-                      <option value="£">£ - British Pound</option>
-                      <option value="NGN">₦ - Nigerian Naira</option>
+                      <option value="XAF">{t("users.currencyXAF")}</option>
+                      <option value="$">{t("users.currencyUSD")}</option>
+                      <option value="€">{t("users.currencyEUR")}</option>
+                      <option value="£">{t("users.currencyGBP")}</option>
+                      <option value="NGN">{t("users.currencyNGN")}</option>
                     </select>
                   </div>
                 )}
