@@ -1,8 +1,11 @@
+import base64
+import io
 import json
 import os
 import random
 import shutil
 import threading
+import uuid
 from datetime import datetime, timedelta
 
 try:
@@ -21,11 +24,13 @@ from sqlmodel import delete, select, text
 
 try:
     from .database import create_db_and_tables, get_session, engine
-    from .models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog, StoreCredit, LendingAccount, BorrowCard, BorrowCardItem
+    from .models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog, StoreCredit, LendingAccount, BorrowCard, BorrowCardItem, PaymentGateway, PaymentTransaction
+    from . import payments
     from .utils import print_receipt_with_timeout
 except (ImportError, SystemError):
     from database import create_db_and_tables, get_session, engine
-    from models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog, StoreCredit, LendingAccount, BorrowCard, BorrowCardItem
+    from models import User, Product, Batch, InventoryTransaction, Sale, SaleItem, SystemSetting, UserSession, ActivityLog, StoreCredit, LendingAccount, BorrowCard, BorrowCardItem, PaymentGateway, PaymentTransaction
+    import payments
     from utils import print_receipt_with_timeout
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -392,6 +397,22 @@ def startup_event() -> None:
             elif key == "currency" and existing.value in ("FCFA", "$", "USD"):
                 existing.value = "XAF"
                 session.add(existing)
+
+        # Seed the supported mobile payment providers so they show up in the
+        # settings overview; admins fill in credentials and enable the one to use.
+        for provider_id in payments.PROVIDER_IDS:
+            existing = session.exec(
+                select(PaymentGateway).where(PaymentGateway.gateway_name == provider_id)
+            ).first()
+            if not existing:
+                session.add(
+                    PaymentGateway(
+                        id=str(uuid.uuid4()),
+                        gateway_name=provider_id,
+                        is_active=False,
+                        environment="sandbox",
+                    )
+                )
         session.commit()
 
 
@@ -687,6 +708,661 @@ def update_profit_default(request: Request, body: dict):
 
 
 # ---------------------------------------------------------------------------
+# Mobile payment gateways
+# ---------------------------------------------------------------------------
+
+def _require_admin(request: Request, session) -> tuple[str, int]:
+    """Payment credentials are admin-only. Returns (username, user_id)."""
+    actor, actor_id = _request_actor(request, session)
+    if actor_id is None:
+        raise HTTPException(status_code=401, detail="Sign in to manage payment gateways")
+    user = session.get(User, actor_id)
+    if not user or user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an administrator can manage payment gateways")
+    if user.is_first_login:
+        raise HTTPException(status_code=403, detail="Change your password before managing payment gateways")
+    return actor, actor_id
+
+
+def _gateway_public_dict(row: PaymentGateway) -> dict:
+    """Safe representation: secrets are never returned, only a presence hint."""
+    return {
+        "id": row.id,
+        "gateway_name": row.gateway_name,
+        "provider_label": payments.PROVIDER_LABELS.get(row.gateway_name, row.gateway_name),
+        "is_active": bool(row.is_active),
+        "environment": row.environment or "sandbox",
+        "api_user": row.api_user or "",
+        "has_api_key": bool(row.api_key),
+        "has_webhook_secret": bool(row.webhook_secret),
+        "master_phone_number": row.master_phone_number or "",
+        "bank_name": row.bank_name or "",
+        "bank_account_number": row.bank_account_number or "",
+        "base_url": row.base_url or "",
+        "is_manual": row.gateway_name == "bank_transfer",
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _gateway_webhook_url(request: Request, gateway_name: str) -> str:
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/api/payments/webhook/{gateway_name}"
+
+
+def _gateway_to_client_dict(row: PaymentGateway, request: Request) -> dict:
+    payload = _gateway_public_dict(row)
+    payload["webhook_endpoint"] = _gateway_webhook_url(request, row.gateway_name)
+    return payload
+
+
+@app.get("/api/payment-gateways/providers")
+def list_payment_providers():
+    return {
+        "providers": [
+            {"id": key, "label": label, "is_manual": key == "bank_transfer"}
+            for key, label in payments.PROVIDER_LABELS.items()
+        ]
+    }
+
+
+@app.get("/api/payment-gateways")
+def list_payment_gateways(request: Request):
+    with get_session() as session:
+        _require_admin(request, session)
+        rows = session.exec(select(PaymentGateway).order_by(PaymentGateway.gateway_name)).all()
+        return {"gateways": [_gateway_to_client_dict(r, request) for r in rows]}
+
+
+@app.get("/api/payment-gateways/active")
+def list_active_payment_gateways():
+    """Checkout-facing: non-secret details of every enabled gateway."""
+    with get_session() as session:
+        rows = session.exec(select(PaymentGateway).where(PaymentGateway.is_active == True)).all()  # noqa: E712
+        return {
+            "gateways": [
+                {
+                    "id": r.id,
+                    "gateway_name": r.gateway_name,
+                    "provider_label": payments.PROVIDER_LABELS.get(r.gateway_name, r.gateway_name),
+                    "environment": r.environment or "sandbox",
+                    "master_phone_number": r.master_phone_number or "",
+                    "bank_name": r.bank_name or "",
+                    "bank_account_number": r.bank_account_number or "",
+                    "is_manual": r.gateway_name == "bank_transfer",
+                    "is_ready": bool(r.api_user and r.api_key) or r.gateway_name == "bank_transfer",
+                }
+                for r in rows
+            ]
+        }
+
+
+def _apply_gateway_payload(session, row: PaymentGateway, body: dict) -> None:
+    """Apply a settings form submission. Blank secrets keep the stored value."""
+    if "gateway_name" in body:
+        name = str(body["gateway_name"]).strip().lower()
+        if name not in payments.PROVIDER_IDS:
+            raise HTTPException(status_code=400, detail=f"Unknown payment provider '{body['gateway_name']}'")
+        clash = session.exec(
+            select(PaymentGateway).where(PaymentGateway.gateway_name == name, PaymentGateway.id != row.id)
+        ).first()
+        if clash:
+            raise HTTPException(status_code=400, detail="That payment provider is already configured")
+        row.gateway_name = name
+
+    if "is_active" in body:
+        row.is_active = bool(body["is_active"])
+    if "environment" in body:
+        env = str(body["environment"]).strip().lower()
+        if env not in ("sandbox", "live"):
+            raise HTTPException(status_code=400, detail="Environment must be 'sandbox' or 'live'")
+        row.environment = env
+
+    for field in ("api_user", "base_url", "master_phone_number", "bank_name", "bank_account_number"):
+        if field in body:
+            value = str(body[field]).strip()
+            setattr(row, field, value or None)
+
+    for field, clear_field in (("api_key", "clear_api_key"), ("webhook_secret", "clear_webhook_secret")):
+        if body.get(clear_field):
+            setattr(row, field, None)
+        elif body.get(field):
+            setattr(row, field, payments.encrypt_secret(str(body[field])))
+
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+
+
+@app.post("/api/payment-gateways")
+def create_payment_gateway(request: Request, body: dict):
+    with get_session() as session:
+        actor, actor_id = _require_admin(request, session)
+        row = PaymentGateway(id=str(uuid.uuid4()), gateway_name="")
+        _apply_gateway_payload(session, row, body)
+        if not row.gateway_name:
+            raise HTTPException(status_code=400, detail="Select a payment provider")
+        session.add(row)
+        session.commit()
+        log_activity(actor, actor_id, "CREATE_PAYMENT_GATEWAY", f"Added payment provider {row.gateway_name}")
+        return _gateway_to_client_dict(row, request)
+
+
+@app.put("/api/payment-gateways/{gateway_id}")
+def update_payment_gateway(request: Request, gateway_id: str, body: dict):
+    with get_session() as session:
+        actor, actor_id = _require_admin(request, session)
+        row = session.get(PaymentGateway, gateway_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Payment gateway not found")
+        _apply_gateway_payload(session, row, body)
+        session.commit()
+        log_activity(actor, actor_id, "UPDATE_PAYMENT_GATEWAY", f"Updated payment provider {row.gateway_name}")
+        return _gateway_to_client_dict(row, request)
+
+
+@app.post("/api/payment-gateways/{gateway_id}/toggle")
+def toggle_payment_gateway(request: Request, gateway_id: str, body: dict):
+    """Enable a gateway (disabling every other one) or disable it."""
+    with get_session() as session:
+        actor, actor_id = _require_admin(request, session)
+        row = session.get(PaymentGateway, gateway_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Payment gateway not found")
+        new_state = bool(body.get("is_active", not row.is_active))
+        if new_state:
+            for other in session.exec(select(PaymentGateway).where(PaymentGateway.id != row.id)).all():
+                if other.is_active:
+                    other.is_active = False
+                    other.updated_at = datetime.utcnow()
+                    session.add(other)
+        row.is_active = new_state
+        row.updated_at = datetime.utcnow()
+        session.add(row)
+        session.commit()
+        state = "Enabled" if new_state else "Disabled"
+        log_activity(actor, actor_id, "TOGGLE_PAYMENT_GATEWAY", f"{state} payment provider {row.gateway_name}")
+        return _gateway_to_client_dict(row, request)
+
+
+@app.delete("/api/payment-gateways/{gateway_id}")
+def delete_payment_gateway(request: Request, gateway_id: str):
+    with get_session() as session:
+        actor, actor_id = _require_admin(request, session)
+        row = session.get(PaymentGateway, gateway_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Payment gateway not found")
+        name = row.gateway_name
+        for txn in session.exec(select(PaymentTransaction).where(PaymentTransaction.gateway_id == gateway_id)).all():
+            session.delete(txn)
+        session.delete(row)
+        session.commit()
+        log_activity(actor, actor_id, "DELETE_PAYMENT_GATEWAY", f"Removed payment provider {name}")
+    return {"message": "Payment gateway removed"}
+
+
+# ---------------------------------------------------------------------------
+# Mobile money checkout
+# ---------------------------------------------------------------------------
+
+def _pick_active_gateway(session) -> PaymentGateway:
+    rows = session.exec(select(PaymentGateway).where(PaymentGateway.is_active == True)).all()  # noqa: E712
+    if not rows:
+        raise HTTPException(
+            status_code=400,
+            detail="No mobile payment provider is enabled. An administrator must enable one in "
+                   "Settings > Mobile Payment Configurations.",
+        )
+    # Mobile money providers first; manual bank transfer only as a last resort.
+    rows = sorted(rows, key=lambda r: (r.gateway_name == "bank_transfer", r.gateway_name or ""))
+    for row in rows:
+        if row.gateway_name == "bank_transfer" or (row.api_user and row.api_key):
+            return row
+    return rows[0]
+
+
+def _payment_to_dict(p: PaymentTransaction, gateway: PaymentGateway | None = None) -> dict:
+    name = gateway.gateway_name if gateway else None
+    return {
+        "id": p.id,
+        "gateway_id": p.gateway_id,
+        "gateway_name": name or "",
+        "provider_label": payments.PROVIDER_LABELS.get(name or "", name or ""),
+        "reference": p.reference,
+        "provider_transaction_id": p.provider_transaction_id or "",
+        "phone_number": p.phone_number,
+        "operator": payments.detect_carrier(p.phone_number) or "",
+        "amount": p.amount,
+        "currency": p.currency,
+        "status": p.status,
+        "error_message": p.error_message or "",
+        "attempt": p.attempt,
+        "sale_id": p.sale_id,
+        "requires_manual_confirmation": name == "bank_transfer",
+        "bank_name": (gateway.bank_name or "") if gateway else "",
+        "bank_account_number": (gateway.bank_account_number or "") if gateway else "",
+    }
+
+
+def _cart_total(session, items: list) -> float:
+    """Cart value, mirroring the pricing used when the sale is finally recorded."""
+    total = 0.0
+    for item in items:
+        product = session.get(Product, item.get("product_id"))
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product {item.get('product_id')} not found")
+        qty = int(item.get("quantity", 0) or 0)
+        if qty <= 0:
+            raise HTTPException(status_code=400, detail="Invalid quantity in cart")
+        unit_price = product.selling_price if item.get("unit_price") is None else item["unit_price"]
+        total += round(float(unit_price), 2) * qty
+    if total <= 0:
+        raise HTTPException(status_code=400, detail="Sale total must be greater than zero")
+    return round(total, 2)
+
+
+def _send_to_provider(
+    gateway: PaymentGateway,
+    payment: PaymentTransaction,
+    operator: str | None = None,
+) -> None:
+    """Hand the request to the gateway. Raises PaymentError on failure."""
+    cfg = payments.GatewayConfig.from_row(gateway)
+    result = payments.adapter_for(cfg.name).initiate(
+        cfg,
+        payment.phone_number,
+        payment.amount,
+        payment.reference,
+        payment.currency,
+        f"Payment {payment.reference}",
+        operator=operator,
+    )
+    payment.provider_transaction_id = result["provider_transaction_id"]
+    payment.status = "pending"
+    payment.error_message = None
+    payment.updated_at = datetime.utcnow()
+
+
+def _payment_http_error(exc: payments.PaymentError, status_code: int = 402) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"message": str(exc), "code": exc.code, "retryable": exc.retryable},
+    )
+
+
+def _normalize_phone_or_400(raw: str) -> str:
+    try:
+        return payments.normalize_phone(raw)
+    except payments.PaymentError as exc:
+        raise _payment_http_error(exc, status_code=400)
+
+
+def _normalize_operator(raw: str | None) -> str | None:
+    value = str(raw or "").strip().lower()
+    if value in ("mtn", "mobile money"):
+        return "MTN"
+    if value in ("orange", "orange money"):
+        return "Orange"
+    return None
+
+
+def _qr_data_url(text: str) -> str | None:
+    """Render text (a payment link) as a PNG data URL for the checkout modal."""
+    try:
+        import qrcode
+    except ImportError:
+        return None
+    try:
+        image = qrcode.make(text)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+    except Exception:
+        return None
+
+
+def _mark_payment_failed(payment_id: str, message: str) -> None:
+    """Record a failure unless the payment already produced a sale."""
+    with get_session() as session:
+        payment = session.get(PaymentTransaction, payment_id)
+        if not payment or payment.sale_id:
+            return
+        payment.status = "failed"
+        payment.error_message = message[:500]
+        payment.updated_at = datetime.utcnow()
+        session.add(payment)
+        session.commit()
+
+
+def _finalize_momo_sale(request: Request, payment_id: str, cashier_username: str) -> dict:
+    """Record the sale for a confirmed payment (payment_method = 'MoMo')."""
+    with get_session() as session:
+        payment = session.get(PaymentTransaction, payment_id)
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment not found")
+        if payment.sale_id:
+            return {"id": payment.sale_id, "invoice_number": None, "message": "Sale already recorded"}
+        items = json.loads(payment.cart_payload or "[]")
+        username = cashier_username or payment.cashier_username or ""
+
+    def attach(session, sale):
+        payment = session.get(PaymentTransaction, payment_id)
+        if not payment:
+            return
+        payment.sale_id = sale.id
+        payment.status = "successful"
+        payment.error_message = None
+        payment.updated_at = datetime.utcnow()
+        session.add(payment)
+
+    return _record_sale(request, "MoMo", username, items, on_sale_created=attach)
+
+
+@app.post("/api/payments/momo/initiate")
+def initiate_momo_payment(request: Request, body: dict):
+    items = body.get("items", [])
+    if not items:
+        raise HTTPException(status_code=400, detail="No items in the sale")
+    msisdn = _normalize_phone_or_400(str(body.get("phone_number", "")).strip())
+    operator = _normalize_operator(body.get("operator")) or payments.detect_carrier(msisdn)
+    cashier_username = str(body.get("cashier_username", "") or "")
+
+    with get_session() as session:
+        gateway = _pick_active_gateway(session)
+        payment = PaymentTransaction(
+            gateway_id=gateway.id,
+            reference=f"MOMO-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}",
+            phone_number=msisdn,
+            amount=_cart_total(session, items),
+            currency=_get_setting(session, "currency") or "XAF",
+            status="pending",
+            attempt=1,
+            cashier_username=cashier_username,
+            cart_payload=json.dumps(items),
+        )
+        session.add(payment)
+        session.commit()
+        session.refresh(payment)
+
+        actor, actor_id = _request_actor(request, session, cashier_username)
+        log_activity(
+            actor, actor_id, "INITIATE_MOMO_PAYMENT",
+            f"MoMo payment {payment.reference} via {gateway.gateway_name} to {msisdn} for {payment.currency} {payment.amount}",
+        )
+
+        # Bank transfer settles offline: no provider call, the cashier confirms it.
+        if payments.is_manual(payments.GatewayConfig.from_row(gateway)):
+            session.commit()
+            session.refresh(payment)
+            return _payment_to_dict(payment, gateway)
+
+        try:
+            _send_to_provider(gateway, payment, operator)
+        except payments.PaymentError as exc:
+            payment.status = "failed"
+            payment.error_message = str(exc)[:500]
+            payment.updated_at = datetime.utcnow()
+            session.add(payment)
+            session.commit()
+            raise _payment_http_error(exc)
+
+        session.add(payment)
+        session.commit()
+        session.refresh(payment)
+        return _payment_to_dict(payment, gateway)
+
+
+@app.post("/api/payments/momo/qr")
+def create_momo_qr_payment(request: Request, body: dict):
+    """Create a hosted-checkout payment and return its QR code for scanning."""
+    items = body.get("items", [])
+    if not items:
+        raise HTTPException(status_code=400, detail="No items in the sale")
+    cashier_username = str(body.get("cashier_username", "") or "")
+
+    with get_session() as session:
+        gateway = _pick_active_gateway(session)
+        cfg = payments.GatewayConfig.from_row(gateway)
+        adapter = payments.adapter_for(cfg.name)
+        label = payments.PROVIDER_LABELS.get(gateway.gateway_name, gateway.gateway_name)
+        if payments.is_manual(cfg) or not getattr(adapter, "supports_payment_link", False):
+            return {
+                "qr_available": False,
+                "reason": f"{label} does not support automatic QR payment links. Use the mobile money number below.",
+                "gateway_name": gateway.gateway_name,
+                "provider_label": label,
+            }
+
+        amount = _cart_total(session, items)
+        currency = _get_setting(session, "currency") or "XAF"
+        payment = PaymentTransaction(
+            gateway_id=gateway.id,
+            reference=f"QR-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}",
+            phone_number="",
+            amount=amount,
+            currency=currency,
+            status="pending",
+            attempt=1,
+            cashier_username=cashier_username,
+            cart_payload=json.dumps(items),
+        )
+        session.add(payment)
+        session.commit()
+        session.refresh(payment)
+
+        try:
+            result = adapter.create_payment_link(
+                cfg,
+                payment.amount,
+                payment.reference,
+                payment.currency,
+                f"Payment {payment.reference}",
+            )
+        except payments.PaymentError as exc:
+            payment.status = "failed"
+            payment.error_message = str(exc)[:500]
+            payment.updated_at = datetime.utcnow()
+            session.add(payment)
+            session.commit()
+            session.refresh(payment)
+            return {
+                "qr_available": False,
+                "reason": str(exc),
+                "payment": _payment_to_dict(payment, gateway),
+                "gateway_name": gateway.gateway_name,
+                "provider_label": label,
+            }
+
+        payment.provider_transaction_id = result.get("provider_transaction_id") or payment.reference
+        payment.updated_at = datetime.utcnow()
+        session.add(payment)
+        session.commit()
+        session.refresh(payment)
+
+        actor, actor_id = _request_actor(request, session, cashier_username)
+        log_activity(
+            actor, actor_id, "CREATE_MOMO_QR_PAYMENT",
+            f"MoMo QR payment {payment.reference} via {gateway.gateway_name} for {payment.currency} {payment.amount}",
+        )
+
+        payment_link = str(result["payment_link"])
+        qr_data_url = _qr_data_url(payment_link)
+        payload = _payment_to_dict(payment, gateway)
+        payload.update({
+            "qr_available": bool(qr_data_url),
+            "qr_data_url": qr_data_url or "",
+            "payment_link": payment_link,
+            "reason": "" if qr_data_url else "The QR image could not be generated on this server.",
+        })
+        return payload
+
+
+@app.post("/api/payments/momo/confirm")
+def confirm_momo_payment(request: Request, body: dict):
+    """Cashier-confirmed settlement, used by the manual bank transfer provider."""
+    with get_session() as session:
+        payment = session.get(PaymentTransaction, str(body.get("payment_id", "")))
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment not found")
+        payment_id = payment.id
+        sale_id = payment.sale_id
+        if sale_id:
+            return {"status": "successful", "payment_id": payment_id, "sale_id": sale_id}
+        gateway = session.get(PaymentGateway, payment.gateway_id)
+        if not gateway or gateway.gateway_name != "bank_transfer":
+            raise HTTPException(status_code=400, detail="This payment cannot be confirmed manually")
+
+    result = _finalize_momo_sale(request, payment_id, str(body.get("cashier_username", "") or ""))
+    return {"status": "successful", "payment_id": payment_id, "sale": result}
+
+
+@app.post("/api/payments/momo/{payment_id}/retry")
+def retry_momo_payment(request: Request, payment_id: str, body: dict):
+    """Start a fresh attempt for a failed payment using the same cart."""
+    phone_number = str(body.get("phone_number", "")).strip()
+    operator = _normalize_operator(body.get("operator"))
+
+    with get_session() as session:
+        payment = session.get(PaymentTransaction, payment_id)
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment not found")
+        if payment.sale_id or payment.status == "successful":
+            raise HTTPException(status_code=400, detail="This payment already completed")
+        gateway = session.get(PaymentGateway, payment.gateway_id)
+        if not gateway:
+            raise HTTPException(status_code=404, detail="The payment provider is no longer configured")
+        if phone_number:
+            payment.phone_number = _normalize_phone_or_400(phone_number)
+        operator = operator or payments.detect_carrier(payment.phone_number)
+
+        actor, actor_id = _request_actor(request, session, payment.cashier_username or "")
+        attempt = payment.attempt + 1
+        log_activity(actor, actor_id, "RETRY_MOMO_PAYMENT", f"Attempt {attempt} for {payment.reference}")
+
+        payment.attempt = attempt
+        payment.provider_transaction_id = None
+        payment.status = "pending"
+        payment.error_message = None
+        payment.updated_at = datetime.utcnow()
+        session.add(payment)
+        session.commit()
+        session.refresh(payment)
+
+        try:
+            _send_to_provider(gateway, payment, operator)
+        except payments.PaymentError as exc:
+            payment.status = "failed"
+            payment.error_message = str(exc)[:500]
+            payment.updated_at = datetime.utcnow()
+            session.add(payment)
+            session.commit()
+            raise _payment_http_error(exc)
+
+        session.add(payment)
+        session.commit()
+        session.refresh(payment)
+        return _payment_to_dict(payment, gateway)
+
+
+@app.get("/api/payments/momo/{payment_id}")
+def get_momo_payment(request: Request, payment_id: str):
+    """Poll the gateway and record the sale as soon as the payment succeeds."""
+    with get_session() as session:
+        payment = session.get(PaymentTransaction, payment_id)
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment not found")
+        gateway = session.get(PaymentGateway, payment.gateway_id)
+        payload = _payment_to_dict(payment, gateway)
+        if payment.status == "successful" or payment.sale_id:
+            payload["sale_id"] = payment.sale_id
+            return payload
+        if gateway is None:
+            raise HTTPException(status_code=404, detail="The payment provider is no longer configured")
+        gateway_name = gateway.gateway_name
+        cfg = payments.GatewayConfig.from_row(gateway)
+
+    # Bank transfer is settled offline; the cashier confirms it on the client.
+    if gateway_name == "bank_transfer":
+        payload["status"] = "pending"
+        return payload
+
+    try:
+        result = payments.adapter_for(cfg.name).status(cfg, payload["provider_transaction_id"])
+    except payments.PaymentError as exc:
+        # A status lookup failure is transient; keep polling so the cashier can retry.
+        payload["status"] = "pending"
+        payload["error_message"] = str(exc)
+        return payload
+
+    if result["status"] == "successful":
+        try:
+            sale_result = _finalize_momo_sale(request, payment_id, "")
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, str) else "Could not record the sale"
+            _mark_payment_failed(payment_id, str(detail))
+            payload["status"] = "failed"
+            payload["error_message"] = str(detail)
+            return payload
+        payload["status"] = "successful"
+        payload["error_message"] = ""
+        payload["sale"] = sale_result
+        payload["sale_id"] = sale_result.get("id")
+        return payload
+
+    if result["status"] == "failed":
+        message = (result.get("reason") or "The payment failed.")[:500]
+        _mark_payment_failed(payment_id, message)
+        payload["status"] = "failed"
+        payload["error_message"] = message
+        return payload
+
+    payload["status"] = "pending"
+    return payload
+
+
+@app.post("/api/payments/webhook/{gateway_name}")
+def payment_webhook(gateway_name: str, request: Request, body: dict):
+    """Provider callbacks. Fapshi signs requests with the `x-wh-secret` header."""
+    signature = (
+        request.headers.get("x-wh-secret")
+        or request.headers.get("x-webhook-secret")
+        or request.headers.get("x-signature")
+        or body.get("secret")
+    )
+
+    with get_session() as session:
+        row = session.exec(
+            select(PaymentGateway).where(PaymentGateway.gateway_name == gateway_name.strip().lower())
+        ).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Unknown payment provider")
+        cfg = payments.GatewayConfig.from_row(row)
+
+    if not payments.verify_webhook_secret(cfg, signature):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    trans_id, status = payments.parse_webhook_status(body)
+    if not trans_id or not status:
+        return {"received": True, "matched": False}
+
+    with get_session() as session:
+        payment = session.exec(
+            select(PaymentTransaction).where(PaymentTransaction.provider_transaction_id == trans_id)
+        ).first()
+        if not payment:
+            return {"received": True, "matched": False}
+        if payment.sale_id or payment.status == status:
+            return {"received": True, "matched": True, "status": payment.status}
+        if status == "failed":
+            payment.status = "failed"
+            payment.error_message = payments.error_message_from_payload(body, "The payment failed.")[:500]
+            payment.updated_at = datetime.utcnow()
+            session.add(payment)
+            session.commit()
+        log_activity("system", None, "PAYMENT_WEBHOOK", f"{gateway_name} reported {status} for {trans_id}")
+    return {"received": True, "matched": True, "status": status}
+
+
+# ---------------------------------------------------------------------------
 # Profile endpoints
 # ---------------------------------------------------------------------------
 
@@ -950,12 +1626,19 @@ def get_sales():
         return result
 
 
-@app.post("/api/sales")
-def create_sale(request: Request, body: dict):
-    payment_method = body.get("payment_method", "Cash")
-    items = body.get("items", [])
-    cashier_username = body.get("cashier_username", "")
+def _record_sale(
+    request: Request,
+    payment_method: str,
+    cashier_username: str,
+    items: list,
+    on_sale_created=None,
+) -> dict:
+    """Create a sale, decrement stock and print the receipt.
 
+    Shared by POST /api/sales and the mobile money flow, which records the sale
+    only once the gateway confirms the payment. `on_sale_created(session, sale)`
+    runs inside the same transaction right after the sale is committed.
+    """
     if not items:
         raise HTTPException(status_code=400, detail="No items in the sale")
 
@@ -1158,6 +1841,9 @@ def create_sale(request: Request, body: dict):
             f"Sale {invoice} ({payment_method}) totaling {currency} {total:.2f}: {item_summary}",
         )
 
+        if on_sale_created is not None:
+            on_sale_created(session, sale)
+
         return {
             "id": sale.id,
             "invoice_number": invoice,
@@ -1166,6 +1852,16 @@ def create_sale(request: Request, body: dict):
             "receipt_printed": (print_status or {}).get("success") if print_status else None,
             "receipt_error": (print_status or {}).get("error") if print_status else None,
         }
+
+
+@app.post("/api/sales")
+def create_sale(request: Request, body: dict):
+    return _record_sale(
+        request,
+        body.get("payment_method", "Cash"),
+        body.get("cashier_username", ""),
+        body.get("items", []),
+    )
 
 
 # ---------------------------------------------------------------------------

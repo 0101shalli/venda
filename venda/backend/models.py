@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from typing import Optional, List
 
@@ -234,3 +235,46 @@ class BorrowCardItem(SQLModel, table=True):
 
     borrow_card: Optional[BorrowCard] = Relationship(back_populates="items")
     product: Optional[Product] = Relationship()
+
+
+class PaymentGateway(SQLModel, table=True):
+    """Credentials + receiving details for one mobile money / bank provider."""
+
+    __tablename__ = "payment_gateways"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True, max_length=36)
+    gateway_name: str = Field(max_length=50)
+    is_active: bool = Field(default=False)
+    environment: str = Field(default="sandbox", max_length=10)
+    api_user: Optional[str] = Field(default=None, max_length=255)
+    # api_key / webhook_secret are AES-256-GCM ciphertext (see payments.py)
+    api_key: Optional[str] = Field(default=None, max_length=255)
+    webhook_secret: Optional[str] = Field(default=None, max_length=255)
+    master_phone_number: Optional[str] = Field(default=None, max_length=20)
+    bank_name: Optional[str] = Field(default=None, max_length=100)
+    bank_account_number: Optional[str] = Field(default=None, max_length=50)
+    base_url: Optional[str] = Field(default=None, max_length=255)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PaymentTransaction(SQLModel, table=True):
+    """One mobile money checkout attempt (a retry reuses the same row)."""
+
+    __tablename__ = "payment_transaction"
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True, max_length=36)
+    gateway_id: str = Field(foreign_key="payment_gateways.id", index=True)
+    reference: str = Field(index=True)
+    provider_transaction_id: Optional[str] = Field(default=None, max_length=100)
+    phone_number: str = Field(max_length=20)
+    amount: float
+    currency: str = Field(default="XAF", max_length=10)
+    status: str = Field(default="pending", index=True)
+    error_message: Optional[str] = Field(default=None, max_length=500)
+    attempt: int = Field(default=1)
+    cashier_username: Optional[str] = Field(default=None, max_length=100)
+    sale_id: Optional[int] = Field(default=None, foreign_key="sale.id")
+    cart_payload: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
