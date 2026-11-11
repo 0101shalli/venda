@@ -75,6 +75,22 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
 
+function detectOperator(raw: string): "MTN" | "Orange" | "" {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("237") && digits.length === 12) digits = digits.slice(3);
+  if (digits.length !== 9) return "";
+  const prefix2 = digits.slice(0, 2);
+  const prefix3 = Number(digits.slice(0, 3));
+  if (prefix2 === "67" || (prefix3 >= 650 && prefix3 <= 654) || (prefix3 >= 680 && prefix3 <= 689)) {
+    return "MTN";
+  }
+  if (prefix2 === "69" || (prefix3 >= 655 && prefix3 <= 659) || (prefix3 >= 690 && prefix3 <= 699)) {
+    return "Orange";
+  }
+  return "";
+}
+
 function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
   const { formatPrice } = useCurrency();
   const { t } = useLanguage();
@@ -1053,6 +1069,8 @@ export default function SalesTerminal() {
   const [cashGiven, setCashGiven] = useState<string>("");
   const [cashError, setCashError] = useState<string | null>(null);
   const [showLendModal, setShowLendModal] = useState(false);
+  const [momoModalOpen, setMomoModalOpen] = useState(false);
+  const [activeGateway, setActiveGateway] = useState<any>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -1063,13 +1081,17 @@ export default function SalesTerminal() {
     Promise.all([
       fetch("/api/settings").then((res) => res.json()),
       fetch("/api/users/has-manager1").then((res) => res.json()),
+      fetch("/api/payment-gateways/active").then((res) => res.json()),
     ])
-      .then(([settings, managerCheck]) => {
+      .then(([settings, managerCheck, activeGw]) => {
         setCardDisabled(settings.card_button_disabled === "true");
         setBarcodeScannerDisabled(settings.barcode_scanner_disabled === "true");
         setBargainEnabled(settings.bargain_enabled === "true");
         setLendingEnabled(settings.lending_enabled === "true");
         setCashTenderingEnabled(settings.cash_tendering_enabled === "true");
+        const gws = (activeGw && activeGw.gateways) ? activeGw.gateways : [];
+        setActiveGateway(gws.length > 0 ? gws[0] : null);
+        if (!gws.length && !cardDisabled) setCardDisabled(true);
         if (settings.store_name && settings.store_name.trim()) setStoreName(settings.store_name.trim());
         if (settings.store_logo) setStoreLogo(settings.store_logo);
         if (settings.store_contact1) setStoreContact1(settings.store_contact1);
@@ -1536,14 +1558,17 @@ export default function SalesTerminal() {
                   id="checkout-card"
                   type="button"
                   disabled={checkoutStatus === "loading" || cardDisabled}
-                  onClick={() => handleCheckout("Card")}
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setMomoModalOpen(true);
+                  }}
                   className={`rounded-2xl py-3 text-sm font-bold active:scale-95 transition-all disabled:opacity-50 ${
                     cardDisabled
                       ? "bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed"
                       : "bg-indigo-600 dark:bg-sky-500 text-white hover:bg-indigo-700 dark:hover:bg-sky-600"
                   }`}
                 >
-                  {checkoutStatus === "loading" ? "..." : cardDisabled ? `🚫 ${t("sales.card")}` : `💳 ${t("sales.card")}`}
+                  {checkoutStatus === "loading" ? "..." : cardDisabled ? `🚫 ${t("sales.momo")}` : `📱 ${t("sales.momo")}`}
                 </button>
                 {lendingEnabled && isManager && (
                   <button
@@ -1577,6 +1602,502 @@ export default function SalesTerminal() {
           onComplete={() => { setCart([]); setShowLendModal(false); }}
         />
       )}
+
+      {momoModalOpen && (
+        <MoMoPaymentModal
+          open={momoModalOpen}
+          total={total}
+          activeGateway={activeGateway}
+          cashierUsername={auth?.username}
+          cart={cart}
+          onClose={() => {
+            setMomoModalOpen(false);
+            setCheckoutStatus("idle");
+          }}
+          onSuccess={(sale, invoice) => {
+            setCart([]);
+            setCheckoutStatus("success");
+            const cartSnapshot = receiptLinesFor(cart);
+            const saleTotal = sale.total_amount ?? total;
+            setReceiptPreview({
+              invoice: sale.invoice_number || invoice || "",
+              lines: cartSnapshot,
+              total: saleTotal,
+              payment: "MoMo",
+              date: new Date().toLocaleString(),
+              cashierName: auth?.username || "",
+            });
+            showToast("success", t("sales.momo.success.desc"), t("sales.momo.success"));
+          }}
+          showToast={showToast}
+          t={t}
+        />
+      )}
+    </div>
+  );
+}
+
+function MoMoPaymentModal({
+  open,
+  total,
+  activeGateway,
+  cashierUsername,
+  cart,
+  onClose,
+  onSuccess,
+  showToast,
+  t,
+}: {
+  open: boolean;
+  total: number;
+  activeGateway: any;
+  cashierUsername?: string;
+  cart: CartItem[];
+  onClose: () => void;
+  onSuccess: (sale: any, invoice: string) => void;
+  showToast: (type: "success" | "error", message: string, title?: string) => void;
+  t: (k: string, args?: Record<string, any>) => string;
+}) {
+  const [phone, setPhone] = useState("");
+  const [phase, setPhase] = useState<"input" | "pending" | "polling" | "success" | "failed" | "manual">("input");
+  const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [providerTxn, setProviderTxn] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(1);
+  const [error, setError] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrPaymentId, setQrPaymentId] = useState<string | null>(null);
+  const [qrReason, setQrReason] = useState("");
+  const [qrError, setQrError] = useState<string | null>(null);
+  const maxAttempts = 3;
+  const pollRef = useRef<number | null>(null);
+  const qrPollRef = useRef<number | null>(null);
+  const completedRef = useRef(false);
+  const operator = detectOperator(phone);
+  const phoneDigits = phone.replace(/\D/g, "");
+
+  useEffect(() => {
+    if (!open) {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      if (qrPollRef.current) window.clearInterval(qrPollRef.current);
+      setPhone("");
+      setPhase("input");
+      setPaymentId(null);
+      setProviderTxn(null);
+      setAttempt(1);
+      setError(null);
+      setPolling(false);
+      setQrLoading(false);
+      setQrDataUrl("");
+      setQrPaymentId(null);
+      setQrReason("");
+      setQrError(null);
+    }
+    completedRef.current = false;
+  }, [open]);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      if (qrPollRef.current) window.clearInterval(qrPollRef.current);
+    };
+  }, []);
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    setPolling(false);
+  };
+
+  const stopQrPolling = () => {
+    if (qrPollRef.current) {
+      window.clearInterval(qrPollRef.current);
+      qrPollRef.current = null;
+    }
+  };
+
+  const finishSuccess = (sale: any, invoice: string) => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+    stopPolling();
+    stopQrPolling();
+    setPhase("success");
+    onSuccess(sale, invoice);
+    setTimeout(() => onClose(), 1200);
+  };
+
+  const startPolling = (pid: string) => {
+    stopPolling();
+    stopQrPolling();
+    setPhase("polling");
+    setPolling(true);
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/payments/momo/${pid}`);
+        const body = await res.json();
+        if (!res.ok) {
+          return;
+        }
+        if (body.status === "successful") {
+          if (body.sale) {
+            finishSuccess(body.sale, body.sale.invoice_number);
+          } else if (body.sale_id) {
+            finishSuccess({ id: body.sale_id }, body.invoice_number || "");
+          }
+          return;
+        }
+        if (body.status === "failed") {
+          stopPolling();
+          setError(body.error_message || t("sales.momo.failed"));
+          setPhase("failed");
+          return;
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    tick();
+    pollRef.current = window.setInterval(tick, 2500);
+  };
+
+  const startQrPolling = (pid: string) => {
+    stopQrPolling();
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/payments/momo/${pid}`);
+        const body = await res.json();
+        if (!res.ok) return;
+        if (body.status === "successful") {
+          stopQrPolling();
+          if (body.sale) {
+            finishSuccess(body.sale, body.sale.invoice_number);
+          } else if (body.sale_id) {
+            finishSuccess({ id: body.sale_id }, body.invoice_number || "");
+          }
+          return;
+        }
+        if (body.status === "failed") {
+          stopQrPolling();
+          setQrError(body.error_message || t("sales.momo.failed"));
+        }
+      } catch {
+        // keep polling
+      }
+    };
+    tick();
+    qrPollRef.current = window.setInterval(tick, 3000);
+  };
+
+  useEffect(() => {
+    if (!open || cart.length === 0) return;
+    let cancelled = false;
+    setQrLoading(true);
+    setQrDataUrl("");
+    setQrPaymentId(null);
+    setQrReason("");
+    setQrError(null);
+    const items = cart.map((i) => ({
+      product_id: i.id,
+      quantity: i.quantity,
+      ...(i.bargainPrice != null ? { unit_price: i.bargainPrice } : {}),
+    }));
+    (async () => {
+      try {
+        const res = await fetch("/api/payments/momo/qr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items, cashier_username: cashierUsername || "" }),
+        });
+        const body = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          const msg = body?.detail?.message || body?.detail || t("sales.momo.qr.error");
+          setQrError(msg);
+          return;
+        }
+        if (!body.qr_available) {
+          setQrReason(body.reason || t("sales.momo.qr.unavailable"));
+          return;
+        }
+        setQrDataUrl(body.qr_data_url);
+        setQrPaymentId(body.id);
+        startQrPolling(body.id);
+      } catch {
+        if (!cancelled) setQrError(t("sales.momo.qr.error"));
+      } finally {
+        if (!cancelled) setQrLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      stopQrPolling();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cart, cashierUsername]);
+
+  const initiate = async () => {
+    setError(null);
+    const trimmed = phone.trim();
+    if (!trimmed) {
+      setError(t("sales.momo.invalidphone"));
+      return;
+    }
+    stopQrPolling();
+    setPhase("pending");
+    try {
+      const items = cart.map((i) => ({ product_id: i.id, quantity: i.quantity, ...(i.bargainPrice != null ? { unit_price: i.bargainPrice } : {}) }));
+      const res = await fetch("/api/payments/momo/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone_number: trimmed,
+          operator: detectOperator(trimmed),
+          amount: total,
+          cashier_username: cashierUsername || "",
+          items,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        const msg = body?.detail?.message || body?.detail || t("sales.checkoutfailed");
+        setError(msg);
+        setPhase("failed");
+        return;
+      }
+      setPaymentId(body.id);
+      setProviderTxn(body.provider_transaction_id || null);
+      if (body.status === "successful" && body.sale) {
+        setPhase("success");
+        onSuccess(body.sale, body.sale.invoice_number);
+        setTimeout(() => onClose(), 1200);
+        return;
+      }
+      if (body.gateway_name === "bank_transfer" || body.status === "manual") {
+        setPhase("manual");
+        return;
+      }
+      if (body.provider_transaction_id) {
+        startPolling(body.id);
+      } else {
+        startPolling(body.id);
+      }
+    } catch (e: any) {
+      setError(e.message || t("sales.networkerror"));
+      setPhase("failed");
+    }
+  };
+
+  const retry = async () => {
+    if (!paymentId || attempt >= maxAttempts) return;
+    setError(null);
+    stopQrPolling();
+    setPhase("pending");
+    try {
+      const res = await fetch(`/api/payments/momo/${paymentId}/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone_number: phone.trim(),
+          operator: detectOperator(phone.trim()),
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        const msg = body?.detail?.message || body?.detail || t("sales.momo.failed");
+        setError(msg);
+        setPhase("failed");
+        return;
+      }
+      setAttempt((a) => a + 1);
+      setProviderTxn(body.provider_transaction_id || null);
+      startPolling(body.id);
+    } catch (e: any) {
+      setError(e.message || t("sales.networkerror"));
+      setPhase("failed");
+    }
+  };
+
+  const confirmManual = async () => {
+    if (!paymentId) return;
+    stopQrPolling();
+    setPhase("pending");
+    try {
+      const res = await fetch("/api/payments/momo/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payment_id: paymentId, cashier_username: cashierUsername || "" }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        const msg = body?.detail?.message || body?.detail || t("sales.momo.failed");
+        setError(msg);
+        setPhase("failed");
+        return;
+      }
+      if (body.sale) {
+        setPhase("success");
+        onSuccess(body.sale, body.sale.invoice_number);
+        setTimeout(() => onClose(), 1200);
+      } else if (body.sale_id) {
+        setPhase("success");
+        onSuccess({ id: body.sale_id }, "");
+        setTimeout(() => onClose(), 1200);
+      }
+    } catch (e: any) {
+      setError(e.message || t("sales.networkerror"));
+      setPhase("failed");
+    }
+  };
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 shadow-xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">{t("sales.momo.title")}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none">
+            ✕
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          {phase === "input" && (
+            <>
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t("sales.momo.qr")}
+                  </span>
+                  {activeGateway && (
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                      {activeGateway.provider_label}
+                    </span>
+                  )}
+                </div>
+                {qrLoading ? (
+                  <div className="flex flex-col items-center gap-2 py-6">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-sky-500"></div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{t("sales.momo.qr.loading")}</p>
+                  </div>
+                ) : qrDataUrl ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <img
+                      src={qrDataUrl}
+                      alt="Payment QR code"
+                      className="h-48 w-48 rounded-xl border border-slate-200 dark:border-slate-700 bg-white p-2"
+                    />
+                    <p className="text-center text-xs text-slate-500 dark:text-slate-400">{t("sales.momo.qr.scan")}</p>
+                  </div>
+                ) : (
+                  <p className="py-2 text-center text-xs text-slate-500 dark:text-slate-400">
+                    {qrReason || qrError || t("sales.momo.qr.unavailable")}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+                <span className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  {t("sales.momo.or")}
+                </span>
+                <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300">{t("sales.momo.prompt")}</p>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-1.5">{t("sales.momo.phone")}</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder={t("sales.momo.phone.ph")}
+                  className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-sky-500 outline-none"
+                />
+                <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">{t("sales.momo.phone.help")}</p>
+                {phoneDigits.length >= 9 && (
+                  <p
+                    className={`mt-1.5 text-xs font-semibold ${
+                      operator
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-amber-600 dark:text-amber-400"
+                    }`}
+                  >
+                    {operator ? `${operator} ${t("sales.momo.detected")}` : t("sales.momo.operatorunknown")}
+                  </p>
+                )}
+              </div>
+              <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-4 py-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500 dark:text-slate-400">{t("sales.momo.amount")}</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{total.toLocaleString("en-US")} XAF</span>
+                </div>
+                {activeGateway && (
+                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    {activeGateway.provider_label} • {activeGateway.environment}
+                  </div>
+                )}
+              </div>
+              {error && <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>}
+              <button
+                onClick={() => void initiate()}
+                className="w-full rounded-2xl bg-indigo-600 dark:bg-sky-500 py-3 text-sm font-bold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-all"
+              >
+                {t("sales.momo.pay")}
+              </button>
+            </>
+          )}
+          {(phase === "pending" || phase === "polling") && (
+            <div className="space-y-3 text-center py-4">
+              <div className="h-10 w-10 mx-auto animate-spin rounded-full border-4 border-slate-200 border-t-sky-500"></div>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {phase === "pending" ? t("sales.momo.sending") : t("sales.momo.checking")}
+              </p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">{t("sales.momo.waiting")}</p>
+              {attempt > 1 && <p className="text-xs text-slate-500 dark:text-slate-400">Attempt {attempt} of {maxAttempts}</p>}
+            </div>
+          )}
+          {phase === "manual" && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600 dark:text-slate-300">{t("sales.momo.manual")}</p>
+              <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                <div>{activeGateway?.bank_name || ""}</div>
+                <div className="font-mono">{activeGateway?.bank_account_number || ""}</div>
+                <div className="mt-2 font-semibold">{total.toLocaleString("en-US")} XAF</div>
+              </div>
+              <button
+                onClick={() => void confirmManual()}
+                className="w-full rounded-2xl bg-emerald-600 py-3 text-sm font-bold text-white hover:bg-emerald-700 active:scale-95 transition-all"
+              >
+                {t("sales.momo.confirm.received")}
+              </button>
+              <button onClick={onClose} className="w-full text-sm text-slate-500 dark:text-slate-400">
+                {t("sales.momo.cancelled")}
+              </button>
+            </div>
+          )}
+          {phase === "success" && (
+            <div className="space-y-3 text-center py-4">
+              <div className="text-4xl">✓</div>
+              <p className="text-base font-semibold text-emerald-600 dark:text-emerald-400">{t("sales.momo.success")}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">{t("sales.momo.success.desc")}</p>
+            </div>
+          )}
+          {phase === "failed" && (
+            <div className="space-y-3">
+              <p className="text-base font-semibold text-rose-600 dark:text-rose-400">{t("sales.momo.failed")}</p>
+              {error && <p className="text-sm text-slate-600 dark:text-slate-300">{error}</p>}
+              {attempt < maxAttempts && paymentId && (
+                <button onClick={() => void retry()} className="w-full rounded-2xl bg-indigo-600 dark:bg-sky-500 py-3 text-sm font-bold text-white hover:bg-indigo-700 dark:hover:bg-sky-600 active:scale-95 transition-all">
+                  {t("sales.momo.retry")}
+                </button>
+              )}
+              <button onClick={onClose} className="w-full text-sm text-slate-500 dark:text-slate-400">
+                {t("sales.momo.dismiss")}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
