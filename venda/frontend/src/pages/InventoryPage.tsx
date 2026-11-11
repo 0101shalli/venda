@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, ReactNode } from "react";
+import { useEffect, useState, useMemo, type ReactNode, type KeyboardEvent } from "react";
 import ProductModal, { Product } from "../components/ProductModal";
 import BarcodeModal from "../components/BarcodeModal";
 import MetaModal from "../components/MetaModal";
@@ -84,6 +84,7 @@ export default function InventoryPage() {
   const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
   const [selectedProductForMeta, setSelectedProductForMeta] = useState<Product | null>(null);
   const [isPrintLabelsOpen, setIsPrintLabelsOpen] = useState(false);
+  const [activeRowIndex, setActiveRowIndex] = useState(-1);
 
   const translateOption = (map: Record<string, string>, value: string): string => {
     const key = map[value];
@@ -155,6 +156,31 @@ export default function InventoryPage() {
       (p) => fuzzySearch(searchQuery, p.name) || fuzzySearch(searchQuery, p.barcode)
     );
   }, [products, searchQuery]);
+
+  useEffect(() => {
+    setActiveRowIndex(-1);
+  }, [searchQuery, selectedCategory, selectedStockStatus, selectedState]);
+
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveRowIndex((i) =>
+        filteredProducts.length === 0 ? -1 : i < 0 ? 0 : Math.min(i + 1, filteredProducts.length - 1)
+      );
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveRowIndex((i) =>
+        filteredProducts.length === 0 ? -1 : i < 0 ? filteredProducts.length - 1 : Math.max(i - 1, 0)
+      );
+      return;
+    }
+    if (e.key === "Enter" && activeRowIndex >= 0 && filteredProducts[activeRowIndex]) {
+      e.preventDefault();
+      openEditModal(filteredProducts[activeRowIndex]);
+    }
+  };
 
   const getStockStatus = (product: Product) => {
     const stock = product.current_stock;
@@ -295,6 +321,7 @@ export default function InventoryPage() {
             placeholder={t("inventory.searchplaceholder")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
             className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 pl-10 pr-4 py-2.5 text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:border-indigo-400 dark:focus:border-sky-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-sky-900 outline-none text-slate-900 dark:text-white"
           />
         </div>
@@ -439,11 +466,19 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {filteredProducts.map((product) => {
+                {filteredProducts.map((product, idx) => {
                   const { status, color } = getStockStatus(product);
                   const productState = getProductState(product);
                   return (
-                    <tr key={product.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <tr
+                      key={product.id}
+                      onMouseEnter={() => setActiveRowIndex(idx)}
+                      className={`transition-colors ${
+                        idx === activeRowIndex
+                          ? "bg-indigo-50 dark:bg-slate-800"
+                          : "hover:bg-slate-50 dark:hover:bg-slate-800"
+                      }`}
+                    >
                       <td className="px-6 py-4">
                         <div>
                           <p className="font-medium text-slate-900 dark:text-white">{product.name}</p>

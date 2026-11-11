@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { jsPDF } from "jspdf";
 import JsBarcode from "jsbarcode";
 import { Product } from "./ProductModal";
@@ -32,6 +32,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
   const [error, setError] = useState<string | null>(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const filtered = useMemo(
@@ -76,6 +77,32 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
     });
   }, []);
 
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => (filtered.length === 0 ? -1 : i < 0 ? 0 : Math.min(i + 1, filtered.length - 1)));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => (filtered.length === 0 ? -1 : i < 0 ? filtered.length - 1 : Math.max(i - 1, 0)));
+      return;
+    }
+    if (e.key === "Enter" && activeIndex >= 0 && filtered[activeIndex]) {
+      e.preventDefault();
+      toggle(filtered[activeIndex].id as number | undefined);
+    }
+  };
+
+  useEffect(() => {
+    if (activeIndex < 0) return;
+    const pid = filtered[activeIndex]?.id;
+    if (pid == null) return;
+    listRef.current
+      ?.querySelector(`[data-id="label-product-${pid}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, filtered]);
+
   // Reset internal state whenever the modal is (re)opened.
   useEffect(() => {
     if (isOpen) {
@@ -89,6 +116,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
 
   // Focus the first matching product row when searching.
   useEffect(() => {
+    setActiveIndex(-1);
     if (!searchQuery.trim() || !listRef.current || filtered.length === 0) return;
     const focusId = `label-product-${filtered[0].id}`;
     const el = listRef.current.querySelector(`[data-id="${focusId}"]`);
@@ -229,6 +257,7 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
                 placeholder={t("printlabels.searchplaceholder")}
                 className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 pl-9 pr-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-500 focus:border-indigo-500 dark:focus:border-sky-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-sky-900 outline-none"
               />
@@ -259,17 +288,20 @@ export default function PrintLabelsModal({ isOpen, onClose }: PrintLabelsModalPr
               </div>
             ) : (
               <div className="space-y-1">
-                {filtered.map((p) => {
+                {filtered.map((p, idx) => {
                   const pid = p.id as number;
                   const isSelected = selectedIds.has(pid);
                   return (
                     <div
                       key={pid}
                       data-id={`label-product-${pid}`}
+                      onMouseEnter={() => setActiveIndex(idx)}
                       className={`flex items-center gap-3 rounded-lg px-3 py-2 border transition-colors ${
                         isSelected
                           ? "bg-indigo-50 dark:bg-sky-900/30 border-indigo-200 dark:border-sky-800"
-                          : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800"
+                          : idx === activeIndex
+                            ? "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                            : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800"
                       }`}
                     >
                       <div className="flex-1 min-w-0">

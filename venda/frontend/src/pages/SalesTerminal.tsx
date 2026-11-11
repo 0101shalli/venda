@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import BarcodeScanner, { ProductInfo } from "../components/BarcodeScanner";
 import ScanToast from "../components/ScanToast";
 import { useCurrency } from "../context/CurrencyContext";
@@ -98,11 +98,13 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
   const [results, setResults] = useState<ProductInfo[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const debounceRef = useRef<number | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    setActiveIndex(-1);
     if (!query.trim()) {
       setResults([]);
       setOpen(false);
@@ -114,6 +116,7 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
         const res = await fetch(`/api/products/search?q=${encodeURIComponent(query)}`);
         const data: ProductInfo[] = await res.json();
         setResults(data);
+        setActiveIndex(data.length > 0 ? 0 : -1);
         setOpen(true);
       } catch {
         setResults([]);
@@ -133,11 +136,49 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  useEffect(() => {
+    if (!open || activeIndex < 0) return;
+    const el = wrapperRef.current?.querySelector(`[data-search-index="${activeIndex}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, open]);
+
   const handleSelect = (p: ProductInfo) => {
     onSelect(p);
     setQuery("");
     setResults([]);
+    setActiveIndex(-1);
     setOpen(false);
+  };
+
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setActiveIndex(results.length > 0 ? 0 : -1);
+        return;
+      }
+      setActiveIndex((i) => (results.length ? (i + 1) % results.length : -1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setActiveIndex(results.length > 0 ? results.length - 1 : -1);
+        return;
+      }
+      setActiveIndex((i) => (results.length ? (i - 1 + results.length) % results.length : -1));
+      return;
+    }
+    if (e.key === "Enter" && open && activeIndex >= 0 && results[activeIndex]) {
+      e.preventDefault();
+      handleSelect(results[activeIndex]);
+    }
   };
 
   return (
@@ -151,6 +192,7 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
           onFocus={() => results.length > 0 && setOpen(true)}
           placeholder={t("sales.searchplaceholder")}
           className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2.5 pl-10 pr-4 text-sm text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 outline-none ring-inset focus:border-indigo-400 dark:focus:border-sky-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-sky-900"
@@ -163,12 +205,16 @@ function SearchBar({ onSelect }: { onSelect: (p: ProductInfo) => void }) {
 
       {open && results.length > 0 && (
         <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
-          {results.map((p) => (
+          {results.map((p, idx) => (
             <button
               key={p.id}
               type="button"
+              data-search-index={idx}
+              onMouseEnter={() => setActiveIndex(idx)}
               onClick={() => handleSelect(p)}
-              className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-indigo-50 dark:hover:bg-slate-800"
+              className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-indigo-50 dark:hover:bg-slate-800 ${
+                idx === activeIndex ? "bg-indigo-50 dark:bg-slate-800" : ""
+              }`}
             >
               <div>
                 <p className="text-sm font-semibold text-slate-800 dark:text-white">{p.name}</p>
@@ -576,6 +622,7 @@ function BorrowCardModal({
   const { t } = useLanguage();
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<BorrowerOption[]>([]);
+  const [activeResultIndex, setActiveResultIndex] = useState(-1);
   const [selectedAccount, setSelectedAccount] = useState<BorrowerOption | null>(null);
   const [borrowType, setBorrowType] = useState<"sales_credit" | "layaway">("sales_credit");
   const [durationType, setDurationType] = useState<"day" | "month" | "year">("month");
@@ -622,6 +669,7 @@ function BorrowCardModal({
   }, [selectedAccount]);
 
   useEffect(() => {
+    setActiveResultIndex(-1);
     if (!search.trim()) {
       setSearchResults([]);
       return;
@@ -632,11 +680,38 @@ function BorrowCardModal({
         const res = await fetch(`/api/lending/accounts/search?q=${encodeURIComponent(search)}`);
         const data = await res.json();
         setSearchResults(data);
+        setActiveResultIndex(data.length > 0 ? 0 : -1);
       } catch {
         setSearchResults([]);
       }
     }, 250);
   }, [search]);
+
+  const selectBorrower = (acc: BorrowerOption) => {
+    setSelectedAccount(acc);
+    setSearch("");
+    setSearchResults([]);
+    setActiveResultIndex(-1);
+  };
+
+  const handleBorrowerKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveResultIndex((i) => (searchResults.length ? (i + 1) % searchResults.length : -1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveResultIndex((i) =>
+        searchResults.length ? (i - 1 + searchResults.length) % searchResults.length : -1
+      );
+      return;
+    }
+    if (e.key === "Enter" && activeResultIndex >= 0 && searchResults[activeResultIndex]) {
+      e.preventDefault();
+      selectBorrower(searchResults[activeResultIndex]);
+    }
+  };
 
   const layaway = borrowType === "layaway";
   const downpaymentOptions = layaway ? [20, 30, 40] : [30, 50, 60];
@@ -763,18 +838,22 @@ function BorrowCardModal({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={handleBorrowerKeyDown}
                 onFocus={() => searchResults.length > 0 && setSearchResults(searchResults)}
                 placeholder={t("sales.borrowsearchplaceholder")}
                 className="mt-1 block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:border-sky-500 focus:ring-1 focus:ring-sky-500 outline-none"
               />
               {searchResults.length > 0 && (
                 <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
-                  {searchResults.map((acc) => (
+                  {searchResults.map((acc, idx) => (
                     <button
                       key={acc.id}
                       type="button"
-                      onClick={() => { setSelectedAccount(acc); setSearch(""); setSearchResults([]); }}
-                      className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-sky-50 dark:hover:bg-slate-800"
+                      onMouseEnter={() => setActiveResultIndex(idx)}
+                      onClick={() => selectBorrower(acc)}
+                      className={`flex w-full items-center justify-between px-4 py-3 text-left hover:bg-sky-50 dark:hover:bg-slate-800 ${
+                        idx === activeResultIndex ? "bg-sky-50 dark:bg-slate-800" : ""
+                      }`}
                     >
                       <div>
                         <p className="text-sm font-semibold text-slate-800 dark:text-white">{acc.full_name}</p>

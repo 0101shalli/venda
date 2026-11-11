@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { useCurrency } from "../context/CurrencyContext";
 import { useLanguage } from "../context/LanguageContext";
 import RefundModal, { RefundOrderItem } from "../components/RefundModal";
@@ -195,6 +195,7 @@ export default function OrdersPage() {
   const [viewCreditsOpen, setViewCreditsOpen] = useState(false);
   const [viewCreditsRefresh, setViewCreditsRefresh] = useState(0);
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
+  const [activeOrderIndex, setActiveOrderIndex] = useState(-1);
 
   const fetchOrders = () => {
     fetch("/api/sales")
@@ -228,6 +229,31 @@ export default function OrdersPage() {
     );
   });
 
+  useEffect(() => {
+    setActiveOrderIndex(-1);
+  }, [searchTerm]);
+
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveOrderIndex((i) =>
+        filteredOrders.length === 0 ? -1 : i < 0 ? 0 : Math.min(i + 1, filteredOrders.length - 1)
+      );
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveOrderIndex((i) =>
+        filteredOrders.length === 0 ? -1 : i < 0 ? filteredOrders.length - 1 : Math.max(i - 1, 0)
+      );
+      return;
+    }
+    if (e.key === "Enter" && activeOrderIndex >= 0 && filteredOrders[activeOrderIndex]) {
+      e.preventDefault();
+      toggleExpand(filteredOrders[activeOrderIndex].id);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-sm border border-slate-200 dark:border-slate-800">
@@ -242,6 +268,7 @@ export default function OrdersPage() {
             placeholder={t("orders.searchplaceholder")}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
             className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all"
           />
         </div>
@@ -283,14 +310,19 @@ export default function OrdersPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredOrders.map((order) => {
+          {filteredOrders.map((order, idx) => {
             const isExpanded = expandedOrderId === order.id;
             const dateStr = new Date(order.timestamp).toLocaleString();
             
             return (
               <div
                 key={order.id}
-                className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200"
+                onMouseEnter={() => setActiveOrderIndex(idx)}
+                className={`rounded-3xl bg-white dark:bg-slate-900 border overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 ${
+                  idx === activeOrderIndex
+                    ? "border-sky-400 dark:border-sky-600 ring-1 ring-sky-200 dark:ring-sky-900"
+                    : "border-slate-200 dark:border-slate-800"
+                }`}
               >
                 <div
                   onClick={() => toggleExpand(order.id)}

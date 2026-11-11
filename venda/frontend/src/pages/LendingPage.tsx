@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { jsPDF } from "jspdf";
 import { useCurrency } from "../context/CurrencyContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -1323,6 +1323,7 @@ export default function LendingPage() {
   const [editingAccount, setEditingAccount] = useState<LendingAccount | null>(null);
   const [viewingCards, setViewingCards] = useState<LendingAccount | null>(null);
   const [verifyingAccount, setVerifyingAccount] = useState<LendingAccount | null>(null);
+  const [activeAccountIndex, setActiveAccountIndex] = useState(-1);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -1353,6 +1354,31 @@ export default function LendingPage() {
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, statusFilter]);
+
+  useEffect(() => {
+    setActiveAccountIndex(-1);
+  }, [debouncedSearch, statusFilter]);
+
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveAccountIndex((i) =>
+        accounts.length === 0 ? -1 : i < 0 ? 0 : Math.min(i + 1, accounts.length - 1)
+      );
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveAccountIndex((i) =>
+        accounts.length === 0 ? -1 : i < 0 ? accounts.length - 1 : Math.max(i - 1, 0)
+      );
+      return;
+    }
+    if (e.key === "Enter" && activeAccountIndex >= 0 && accounts[activeAccountIndex]) {
+      e.preventDefault();
+      setEditingAccount(accounts[activeAccountIndex]);
+    }
+  };
 
   const StatTile = ({ label, value, isMoney, className }: { label: string; value: any; isMoney?: boolean; className?: string }) => (
     <div className={`rounded-2xl border p-4 text-center ${className || "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"}`}>
@@ -1404,6 +1430,7 @@ export default function LendingPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
               placeholder={t("lending.searchplaceholder")}
               className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2.5 pl-10 pr-4 text-sm text-slate-800 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
             />
@@ -1443,12 +1470,20 @@ export default function LendingPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {accounts.map((acc) => {
+            {accounts.map((acc, idx) => {
               const unsettled = (acc.borrow_cards || [])
                 .filter((c) => c.status !== "paid" && c.status !== "cancelled")
                 .reduce((sum, c) => sum + Math.max(0, Number(c.total_amount) - Number(c.amount_paid)), 0);
               return (
-                <div key={acc.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 flex flex-col md:flex-row md:items-center gap-3">
+                <div
+                  key={acc.id}
+                  onMouseEnter={() => setActiveAccountIndex(idx)}
+                  className={`rounded-2xl border bg-white dark:bg-slate-900 p-4 flex flex-col md:flex-row md:items-center gap-3 ${
+                    idx === activeAccountIndex
+                      ? "border-sky-400 dark:border-sky-600 ring-1 ring-sky-200 dark:ring-sky-900"
+                      : "border-slate-200 dark:border-slate-800"
+                  }`}
+                >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-slate-800 dark:text-white">{acc.full_name}</p>
