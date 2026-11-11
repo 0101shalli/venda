@@ -20,6 +20,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "login.signin": "Sign in",
     "login.failed": "Login failed",
     "login.noconnect": "Unable to connect to backend.",
+    "login.accountDisabled": "Your account has been deactivated. Please contact the store administrator.",
+    "login.invalidCredentials": "Invalid username or password",
 
     // --- Change Password ---
     "changepw.title": "Change Password",
@@ -1036,6 +1038,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "login.signin": "Se connecter",
     "login.failed": "Échec de la connexion",
     "login.noconnect": "Impossible de se connecter au serveur.",
+    "login.accountDisabled": "Votre compte a été désactivé. Veuillez contacter l'administrateur du magasin.",
+    "login.invalidCredentials": "Nom d'utilisateur ou mot de passe invalide",
 
     // --- Change Password ---
     "changepw.title": "Changer le Mot de Passe",

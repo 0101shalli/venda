@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { setAuth, AuthData } from "../services/auth";
 import { useLanguage } from "../context/LanguageContext";
+import ScanToast from "../components/ScanToast";
 
 export default function LoginPage({ onSuccess }: { onSuccess: (data: AuthData) => void }) {
   const { t } = useLanguage();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [storeName, setStoreName] = useState("");
   const [storeLogo, setStoreLogo] = useState("");
 
@@ -23,6 +25,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: (data: AuthData) =
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
+    setToast(null);
     try {
       const response = await fetch("/api/login", {
         method: "POST",
@@ -34,9 +37,13 @@ export default function LoginPage({ onSuccess }: { onSuccess: (data: AuthData) =
       if (response.ok) {
         setAuth(data);
         onSuccess(data);
-      } else if (response.status === 403) {
+      } else if (response.status === 403 && data.is_first_login) {
         setAuth(data);
         onSuccess(data);
+      } else if (response.status === 403) {
+        setToast(t("login.accountDisabled"));
+      } else if (response.status === 401) {
+        setError(t("login.invalidCredentials"));
       } else {
         setError(data.detail || t("login.failed"));
       }
@@ -86,6 +93,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: (data: AuthData) =
             {t("login.signin")}
           </button>
         </form>
+        {toast && <ScanToast message={toast} type="error" onDismiss={() => setToast(null)} duration={5000} />}
       </div>
     </div>
   );
